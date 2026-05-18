@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
-    use_mock = settings.use_mock_markets or not (settings.market_csgo_api_key and settings.lis_skins_api_key)
-    if use_mock:
+    if settings.use_mock_markets:
         logger.info("Using mock market connectors")
         return {
             "Mock.LIS-SKINS": MockMarketConnector("Mock.LIS-SKINS", price_side="buy"),
@@ -26,12 +25,16 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
 
     connectors: dict[str, BaseMarketConnector] = {}
     if settings.enable_market_csgo:
+        if not settings.market_csgo_api_key:
+            logger.warning("MARKET_CSGO_API_KEY is empty; only public Market.CSGO endpoints will be used")
         connectors["Market.CSGO"] = MarketCsgoConnector(
             api_key=settings.market_csgo_api_key,
             base_url=settings.market_csgo_base_url,
             timeout_seconds=settings.request_timeout_seconds,
         )
     if settings.enable_lis_skins:
+        if not settings.lis_skins_api_key:
+            logger.warning("LIS_SKINS_API_KEY is empty; LIS-SKINS live listings will be unavailable")
         connectors["LIS-SKINS"] = LisSkinsConnector(
             api_key=settings.lis_skins_api_key,
             base_url=settings.lis_skins_base_url,
@@ -94,4 +97,3 @@ def with_prices(listing: MarketListing, currency_engine: CurrencyEngine) -> Mark
     if price_usd is None:
         price_usd = currency_engine.to_usd(price_rub, "RUB")
     return listing.model_copy(update={"price_rub": quantize_money(price_rub), "price_usd": quantize_money(price_usd)})
-
