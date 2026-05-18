@@ -36,6 +36,7 @@ def settings(tmp_path) -> Settings:
         database_url=f"sqlite:///{tmp_path / 'test.db'}",
         telegram_enabled=False,
         use_mock_markets=True,
+        enable_dmarket_stats=False,
         market_poll_interval_seconds=1,
         opportunity_scan_interval_seconds=1,
         paper_position_check_interval_seconds=1,
@@ -88,4 +89,3 @@ async def detect_mock_opportunities(app: TestApp):
     opportunities = app.detector.detect(listings, histories)
     app.opportunity_repository.save_many(opportunities)
     return opportunities
-

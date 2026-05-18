@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.db.models import PaperPositionORM
+from app.db.models import MarketListingORM, PaperPositionORM
 from app.opportunities.models import ArbitrageOpportunity
 from app.paper_trading.paper_pnl import PaperAnalytics
 from app.utils.money import format_percent, format_rub, format_usd
@@ -97,3 +97,31 @@ def format_paper_status(analytics: PaperAnalytics) -> str:
         f"Expected vs actual: {format_rub(analytics.expected_vs_actual_rub)}"
     )
 
+
+def format_dmarket_stats(rows: list[MarketListingORM], total: int) -> str:
+    if not rows:
+        return (
+            "DMarket Stats\n\n"
+            "Локальная выборка пока пустая.\n"
+            "Проверь ENABLE_DMARKET_STATS=true и дождись первого market polling.\n\n"
+            "Важно: это статистика, не сигнал сделки. DMarket не используется для Paper Buy/Sell."
+        )
+
+    lines = [
+        "DMarket Stats",
+        "",
+        "Источник: DMarket.Stats",
+        f"Офферов в локальной выборке: {total}",
+        "",
+        "Самые дешёвые позиции:",
+    ]
+    for row in rows:
+        lines.append(f"- {row.normalized_name}: {format_usd(row.price_usd)} / {format_rub(row.price_rub)}")
+    lines.extend(
+        [
+            "",
+            "Важно: это статистика, не сигнал сделки.",
+            "DMarket не используется для Paper Buy/Sell и не участвует в арбитражных направлениях.",
+        ]
+    )
+    return "\n".join(lines)

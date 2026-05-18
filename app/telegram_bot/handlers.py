@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import logging
 
-from app.db.repositories import OpportunityRepository, PaperRepository
-from app.opportunities.models import ArbitrageOpportunity
+from app.db.repositories import ListingRepository, OpportunityRepository, PaperRepository
 from app.paper_trading.account import PaperAccountService
 from app.paper_trading.paper_execution import PaperExecutionEngine
 from app.telegram_bot.commands import commands_help_text
-from app.telegram_bot.formatter import format_paper_buy, format_paper_sell, format_paper_status
+from app.telegram_bot.formatter import format_dmarket_stats, format_paper_buy, format_paper_sell, format_paper_status
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +16,7 @@ def create_router(
     paper_account: PaperAccountService,
     paper_repository: PaperRepository,
     opportunity_repository: OpportunityRepository,
+    listing_repository: ListingRepository,
 ):
     from aiogram import F, Router
     from aiogram.filters import Command
@@ -76,7 +76,16 @@ def create_router(
 
     @router.message(Command("payment_status", "markets"))
     async def markets(message: Message) -> None:
-        await message.answer("Базовые рынки: Market.CSGO и LIS-SKINS. Третий рынок отключен до payment-аудита.")
+        await message.answer(
+            "Базовые рынки: Market.CSGO и LIS-SKINS.\n"
+            "DMarket подключён только как статистический источник `DMarket.Stats`, без Paper Buy/Sell."
+        )
+
+    @router.message(Command("dmarket_stats"))
+    async def dmarket_stats(message: Message) -> None:
+        rows = listing_repository.latest_by_market("DMarket.Stats", limit=10)
+        total = listing_repository.count_by_market("DMarket.Stats")
+        await message.answer(format_dmarket_stats(rows, total))
 
     @router.message(Command("pause", "resume", "paper_reset"))
     async def not_implemented(message: Message) -> None:
@@ -129,3 +138,4 @@ def create_router(
             await message.answer(f"Paper Sell не выполнен: {exc}")
 
     return router
+

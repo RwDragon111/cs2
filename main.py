@@ -77,6 +77,7 @@ async def async_main() -> None:
             paper_account=paper_account_service,
             paper_repository=paper_repository,
             opportunity_repository=opportunity_repository,
+            listing_repository=listing_repository,
         ),
     )
     scheduler = SchedulerRunner(
@@ -114,4 +115,3 @@ if __name__ == "__main__":
         asyncio.run(async_main())
     except KeyboardInterrupt:
         pass
-

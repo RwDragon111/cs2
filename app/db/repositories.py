@@ -62,6 +62,26 @@ class ListingRepository:
         with self.session_factory() as session:
             return list(session.scalars(select(MarketListingORM).where(MarketListingORM.available.is_(True))).all())
 
+    def latest_by_market(self, market_name: str, limit: int = 10) -> list[MarketListingORM]:
+        with self.session_factory() as session:
+            stmt = (
+                select(MarketListingORM)
+                .where(MarketListingORM.market_name == market_name, MarketListingORM.available.is_(True))
+                .order_by(MarketListingORM.price_rub.asc())
+                .limit(limit)
+            )
+            return list(session.scalars(stmt).all())
+
+    def count_by_market(self, market_name: str) -> int:
+        with self.session_factory() as session:
+            rows = session.scalars(
+                select(MarketListingORM.listing_id).where(
+                    MarketListingORM.market_name == market_name,
+                    MarketListingORM.available.is_(True),
+                )
+            ).all()
+            return len(list(rows))
+
 
 class PaymentProfileRepository:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
@@ -307,4 +327,3 @@ class PaperRepository:
             session.commit()
             session.refresh(position)
             return position
-

@@ -153,5 +153,20 @@ def default_payment_profiles(settings: Settings) -> dict[str, MarketPaymentProfi
             estimated_conversion_fee_percent=Decimal("3"),
             notes="Optional candidate only after payment audit.",
         ),
+        MarketPaymentProfile(
+            market_name="DMarket.Stats",
+            supports_rub=False,
+            supports_mir=False,
+            supports_russian_cards=False,
+            supports_yoomoney=False,
+            supports_crypto=True,
+            deposit_currency="USD",
+            withdrawal_currency="USD",
+            deposit_fee_percent=Decimal("0"),
+            withdrawal_fee_percent=Decimal("0"),
+            currency_conversion_required=True,
+            estimated_conversion_fee_percent=Decimal("3"),
+            notes="Stats-only connector. DMarket is not executable for Russia/Belarus users.",
+        ),
     ]
     return {profile.market_name: check_payment_compatibility(profile, settings) for profile in profiles}

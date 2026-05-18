@@ -38,9 +38,16 @@ DEFAULT_FEES: dict[str, MarketFees] = {
         withdrawal_fee_percent=Decimal("2.0"),
         currency_conversion_fee_percent=Decimal("0"),
     ),
+    "DMarket.Stats": MarketFees(
+        market_name="DMarket.Stats",
+        buy_fee_percent=Decimal("0"),
+        sell_fee_percent=Decimal("5"),
+        deposit_fee_percent=Decimal("0"),
+        withdrawal_fee_percent=Decimal("0"),
+        currency_conversion_fee_percent=Decimal("3"),
+    ),
 }
 
 
 def get_default_fees(market_name: str) -> MarketFees:
     return DEFAULT_FEES.get(market_name, MarketFees(market_name=market_name))
-

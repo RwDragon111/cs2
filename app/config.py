@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     enable_market_csgo: bool = True
     enable_lis_skins: bool = True
     enable_third_market: bool = False
+    enable_dmarket_stats: bool = True
 
     trading_mode: Literal[
         "SIGNAL_ONLY",
@@ -77,6 +78,9 @@ class Settings(BaseSettings):
 
     market_csgo_base_url: str = "https://market.csgo.com"
     lis_skins_base_url: str = "https://lis-skins.com"
+    dmarket_api_base_url: str = "https://api.dmarket.com"
+    dmarket_stats_limit: int = 50
+    dmarket_stats_currency: str = "USD"
     request_timeout_seconds: float = 20.0
     max_api_retries: int = 3
 
@@ -90,6 +94,11 @@ class Settings(BaseSettings):
     @field_validator("base_currency", "secondary_currency", mode="before")
     @classmethod
     def uppercase_currency(cls, value: str) -> str:
+        return str(value).upper()
+
+    @field_validator("dmarket_stats_currency", mode="before")
+    @classmethod
+    def uppercase_dmarket_currency(cls, value: str) -> str:
         return str(value).upper()
 
     @field_validator("trading_mode", mode="before")

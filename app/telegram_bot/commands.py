@@ -15,6 +15,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("resume", "Возобновление задач, зарезервировано"),
     ("payment_status", "Совместимость рынков по платежам"),
     ("markets", "Подключённые рынки"),
+    ("dmarket_stats", "DMarket статистика без сделок"),
     ("paper_status", "Полный статус Paper Trading"),
     ("paper_balance", "Баланс виртуального счёта"),
     ("paper_positions", "Список виртуальных позиций"),

@@ -35,3 +35,4 @@ class MarketName(str, Enum):
     LIS_SKINS = "LIS-SKINS"
     MOCK_MARKET_A = "Mock.LIS-SKINS"
     MOCK_MARKET_B = "Mock.Market.CSGO"
+    DMARKET_STATS = "DMarket.Stats"

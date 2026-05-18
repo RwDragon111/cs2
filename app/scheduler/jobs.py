@@ -6,6 +6,7 @@ import logging
 from app.config import Settings
 from app.currency.currency_engine import CurrencyEngine
 from app.markets.base import BaseMarketConnector, MarketFees, MarketListing, SaleRecord
+from app.markets.dmarket_stats import DMarketStatsConnector
 from app.markets.lis_skins import LisSkinsConnector, OptionalThirdMarketConnector
 from app.markets.market_csgo import MarketCsgoConnector
 from app.markets.mock_market import MockMarketConnector
@@ -16,15 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
+    connectors: dict[str, BaseMarketConnector] = {}
     if settings.use_mock_markets:
         logger.info("Using mock market connectors")
-        return {
-            "Mock.LIS-SKINS": MockMarketConnector("Mock.LIS-SKINS", price_side="buy"),
-            "Mock.Market.CSGO": MockMarketConnector("Mock.Market.CSGO", price_side="sell"),
-        }
-
-    connectors: dict[str, BaseMarketConnector] = {}
-    if settings.enable_market_csgo:
+        connectors["Mock.LIS-SKINS"] = MockMarketConnector("Mock.LIS-SKINS", price_side="buy")
+        connectors["Mock.Market.CSGO"] = MockMarketConnector("Mock.Market.CSGO", price_side="sell")
+    elif settings.enable_market_csgo:
         if not settings.market_csgo_api_key:
             logger.warning("MARKET_CSGO_API_KEY is empty; only public Market.CSGO endpoints will be used")
         connectors["Market.CSGO"] = MarketCsgoConnector(
@@ -32,7 +30,7 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
             base_url=settings.market_csgo_base_url,
             timeout_seconds=settings.request_timeout_seconds,
         )
-    if settings.enable_lis_skins:
+    if not settings.use_mock_markets and settings.enable_lis_skins:
         if not settings.lis_skins_api_key:
             logger.warning("LIS_SKINS_API_KEY is empty; LIS-SKINS live listings will be unavailable")
         connectors["LIS-SKINS"] = LisSkinsConnector(
@@ -42,6 +40,13 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
         )
     if settings.enable_third_market:
         connectors["OptionalThirdMarket"] = OptionalThirdMarketConnector()
+    if settings.enable_dmarket_stats:
+        connectors["DMarket.Stats"] = DMarketStatsConnector(
+            base_url=settings.dmarket_api_base_url,
+            limit=settings.dmarket_stats_limit,
+            currency=settings.dmarket_stats_currency,
+            timeout_seconds=settings.request_timeout_seconds,
+        )
     return connectors
 
 

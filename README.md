@@ -213,6 +213,16 @@ TELEGRAM_ADMIN_CHAT_ID=123456789
 
 Важно: DMarket не включён как базовый рынок. У DMarket есть официальный Trading API, но по официальным Terms/FAQ пользователи из России и Беларуси не могут выполнять депозиты, выводы и торговлю на платформе. Из-за этого DMarket не проходит payment compatibility для базовой версии проекта.
 
+При этом DMarket можно использовать как статистический источник. Для этого включён отдельный read-only connector `DMarket.Stats`:
+
+```env
+ENABLE_DMARKET_STATS=true
+DMARKET_STATS_LIMIT=50
+DMARKET_STATS_CURRENCY=USD
+```
+
+`DMarket.Stats` сохраняет выборку офферов в SQLite и доступен через Telegram-команду `/dmarket_stats`. Он не участвует в арбитражных направлениях, не создаёт Paper Buy и не считается исполнимым рынком.
+
 ### 7. Проверить запуск
 
 ```bash
@@ -354,6 +364,7 @@ sudo systemctl stop cs2-arbitrage
 /resume - зарезервировано
 /payment_status - payment compatibility
 /markets - подключённые рынки
+/dmarket_stats - статистика DMarket без сделок
 /paper_status - полный статус Paper Trading
 /paper_balance - виртуальный баланс
 /paper_positions - виртуальные позиции
