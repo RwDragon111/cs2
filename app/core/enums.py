@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import Enum
 
 
-class TradingMode(StrEnum):
+class TradingMode(str, Enum):
     SIGNAL_ONLY = "SIGNAL_ONLY"
     PAPER_TRADING = "PAPER_TRADING"
     MANUAL_APPROVAL = "MANUAL_APPROVAL"
@@ -11,14 +11,14 @@ class TradingMode(StrEnum):
     AUTO_BUY_AND_SELL = "AUTO_BUY_AND_SELL"
 
 
-class PaperSellMode(StrEnum):
+class PaperSellMode(str, Enum):
     MANUAL_SELL = "MANUAL_SELL"
     AFTER_TRADE_BAN = "AFTER_TRADE_BAN"
     TARGET_PRICE = "TARGET_PRICE"
     TIME_LIMIT = "TIME_LIMIT"
 
 
-class PaperPositionStatus(StrEnum):
+class PaperPositionStatus(str, Enum):
     PENDING_BUY = "PENDING_BUY"
     BOUGHT = "BOUGHT"
     TRADE_LOCKED = "TRADE_LOCKED"
@@ -30,9 +30,8 @@ class PaperPositionStatus(StrEnum):
     FAILED = "FAILED"
 
 
-class MarketName(StrEnum):
+class MarketName(str, Enum):
     MARKET_CSGO = "Market.CSGO"
     LIS_SKINS = "LIS-SKINS"
     MOCK_MARKET_A = "Mock.LIS-SKINS"
     MOCK_MARKET_B = "Mock.Market.CSGO"
-

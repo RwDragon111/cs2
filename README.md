@@ -145,7 +145,7 @@ sudo apt install -y python3 python3-venv python3-pip git screen ca-certificates 
 python3 --version
 ```
 
-Нужен Python 3.11+. Если на сервере версия ниже, поставь Python 3.11/3.12 из репозитория дистрибутива или deadsnakes PPA.
+Рекомендуется Python 3.11+, но проект совместим и с Python 3.10, который часто стоит по умолчанию на Ubuntu 22.04.
 
 ### 3. Скачать проект
 
