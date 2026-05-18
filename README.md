@@ -153,7 +153,7 @@ python3 --version
 
 ```bash
 cd /opt
-sudo git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git cs2_arbitrage_bot
+sudo git clone https://github.com/RwDragon111/cs2_arbitrage.git cs2_arbitrage_bot
 sudo chown -R "$USER":"$USER" /opt/cs2_arbitrage_bot
 cd /opt/cs2_arbitrage_bot
 ```
@@ -403,4 +403,3 @@ pytest
 ## Риски
 
 Арбитраж на скинах не гарантирует прибыль. Основные риски: изменение цены за 7 дней trade ban, низкая ликвидность, исчезновение listing, скрытые комиссии, курсовой spread, задержки вывода, ограничения рынков, неверные API-данные и false positive. Поэтому MVP намеренно работает без реальных покупок и продаж.
-
