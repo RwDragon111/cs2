@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+from decimal import Decimal
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    app_env: str = "production"
+    database_url: str = "sqlite:///data/cs2_arbitrage.db"
+
+    telegram_enabled: bool = True
+    telegram_bot_token: str = ""
+    telegram_admin_chat_id: str = ""
+
+    use_mock_markets: bool = True
+    market_csgo_api_key: str = ""
+    lis_skins_api_key: str = ""
+
+    enable_market_csgo: bool = True
+    enable_lis_skins: bool = True
+    enable_third_market: bool = False
+
+    trading_mode: Literal[
+        "SIGNAL_ONLY",
+        "PAPER_TRADING",
+        "MANUAL_APPROVAL",
+        "AUTO_BUY_LIMITED",
+        "AUTO_BUY_AND_SELL",
+    ] = "PAPER_TRADING"
+
+    paper_trading_enabled: bool = True
+    paper_trading_initial_balance_rub: Decimal = Decimal("10000")
+    paper_trading_initial_balance_usd: Decimal = Decimal("20")
+    paper_trading_allow_negative_balance: bool = False
+    paper_trading_reset_on_start: bool = False
+    paper_trading_trade_ban_days: int = 7
+    paper_trading_sell_mode: Literal["MANUAL_SELL", "AFTER_TRADE_BAN", "TARGET_PRICE", "TIME_LIMIT"] = "MANUAL_SELL"
+    paper_trading_use_real_market_price_on_sell: bool = True
+
+    base_currency: str = "RUB"
+    secondary_currency: str = "USD"
+    rub_usd_rate_source: str = "manual"
+    manual_rub_usd_rate: Decimal = Decimal("100")
+
+    min_profit_rub: Decimal = Decimal("100")
+    min_profit_usd: Decimal = Decimal("1.00")
+    min_roi_percent: Decimal = Decimal("5.0")
+    max_buy_price_rub: Decimal = Decimal("5000")
+    max_buy_price_usd: Decimal = Decimal("50")
+    max_daily_spend_rub: Decimal = Decimal("10000")
+    max_open_positions: int = 10
+
+    risk_buffer_percent: Decimal = Decimal("2.0")
+    currency_spread_percent: Decimal = Decimal("1.0")
+    max_allowed_currency_spread_percent: Decimal = Decimal("2.0")
+    min_liquidity_score: int = 60
+
+    allow_markets_with_crypto_only: bool = False
+    max_payment_conversion_fee_percent: Decimal = Decimal("2.0")
+    max_deposit_fee_percent: Decimal = Decimal("2.0")
+    max_withdrawal_fee_percent: Decimal = Decimal("3.0")
+
+    excluded_markets: str = "CS.MONEY,csmoney,cs.money,White.Market,white.market"
+    optional_market_candidates: str = "Waxpeer,DMarket,BitSkins,Skinport,CSFloat"
+
+    log_level: str = "INFO"
+    log_file: str = "logs/app.log"
+
+    market_poll_interval_seconds: int = 30
+    opportunity_scan_interval_seconds: int = 35
+    paper_position_check_interval_seconds: int = 300
+    sales_history_interval_seconds: int = 900
+
+    market_csgo_base_url: str = "https://market.csgo.com"
+    lis_skins_base_url: str = "https://lis-skins.com"
+    request_timeout_seconds: float = 20.0
+    max_api_retries: int = 3
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    @field_validator("base_currency", "secondary_currency", mode="before")
+    @classmethod
+    def uppercase_currency(cls, value: str) -> str:
+        return str(value).upper()
+
+    @field_validator("trading_mode", mode="before")
+    @classmethod
+    def uppercase_mode(cls, value: str) -> str:
+        return str(value).upper()
+
+    @property
+    def excluded_market_names(self) -> set[str]:
+        return {item.strip().lower() for item in self.excluded_markets.split(",") if item.strip()}
+
+    @property
+    def optional_market_names(self) -> set[str]:
+        return {item.strip() for item in self.optional_market_candidates.split(",") if item.strip()}
+
+    @property
+    def telegram_ready(self) -> bool:
+        return self.telegram_enabled and bool(self.telegram_bot_token and self.telegram_admin_chat_id)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
