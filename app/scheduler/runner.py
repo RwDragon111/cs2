@@ -54,6 +54,9 @@ class SchedulerRunner:
 
     async def start(self) -> None:
         await self.telegram_runner.start()
+        self.sent_opportunity_ids.update(row.id for row in self.opportunity_repository.active(limit=1000))
+        if self.sent_opportunity_ids:
+            logger.info("Loaded %s already active opportunities; they will not be re-sent", len(self.sent_opportunity_ids))
         self._tasks = [
             asyncio.create_task(self.market_poll_loop(), name="market_poll_loop"),
             asyncio.create_task(self.opportunity_detection_loop(), name="opportunity_detection_loop"),

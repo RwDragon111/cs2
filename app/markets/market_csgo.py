@@ -155,3 +155,50 @@ class MarketCsgoConnector(BaseMarketConnector):
         raw = item.get("price") or item.get("price_rub") or item.get("sell_price") or item.get("min_price") or 0
         return to_decimal(raw)
 
+
+class MarketCsgoBuyOrderConnector(MarketCsgoConnector):
+    market_name = "Market.CSGO.BuyOrder"
+    BUY_ORDERS_ENDPOINT = "/api/v2/prices/orders/{currency}.json"
+
+    async def fetch_listings(self) -> list[MarketListing]:
+        data = await self._get_json(self.BUY_ORDERS_ENDPOINT.format(currency="RUB"))
+        raw_items = self._extract_items(data)
+        listings: list[MarketListing] = []
+        now = utc_now()
+
+        for index, item in enumerate(raw_items):
+            name = self._item_name(item)
+            price = self._item_price(item)
+            volume = int(to_decimal(item.get("volume") or item.get("count") or 0))
+            if not name or price <= 0 or volume <= 0:
+                continue
+
+            normalized = normalize_item_name(name)
+            listings.append(
+                MarketListing(
+                    id=f"market-csgo-buy-order-{index}-{normalized}",
+                    market_name=self.market_name,
+                    item_name=name,
+                    normalized_name=normalized,
+                    exterior=extract_exterior(normalized),
+                    weapon_type=detect_weapon_type(normalized),
+                    category=detect_category(normalized),
+                    is_stattrak="StatTrak" in normalized,
+                    is_souvenir=normalized.startswith("Souvenir"),
+                    price=price,
+                    currency="RUB",
+                    price_rub=price,
+                    price_usd=None,
+                    available=True,
+                    tradable=True,
+                    inspect_link=None,
+                    created_at=now,
+                    raw_payload={"buy_order": True, **dict(item)},
+                )
+            )
+
+        logger.info("Fetched %s Market.CSGO buy orders", len(listings))
+        return listings
+
+    async def get_fees(self) -> MarketFees:
+        return get_default_fees(self.market_name)

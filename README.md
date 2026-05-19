@@ -1,155 +1,120 @@
-# CS2 Arbitrage Bot MVP
+# CS2 Arbitrage Bot
 
-Python-приложение для мониторинга арбитражных возможностей на CS2-скинах между Market.CSGO и LIS-SKINS.
+Python MVP для мониторинга арбитража CS2-скинов без Docker, PostgreSQL, Redis и Celery.
 
-MVP работает без Docker, PostgreSQL, Redis и Celery. Реальные покупки и продажи отключены: доступны только режимы `SIGNAL_ONLY` и `PAPER_TRADING`.
-
-## Что делает бот
-
-Бот получает листинги рынков, нормализует названия предметов, считает цену в RUB/USD, учитывает комиссии, payment fees, конвертацию, risk buffer, ликвидность и фильтры риска. Если сделка проходит условия, бот отправляет сигнал в Telegram или пишет его в консоль и `logs/app.log`.
-
-Основной поток:
+Текущая рабочая схема:
 
 ```text
-Market.CSGO + LIS-SKINS или mock-данные
--> нормализация предметов
--> расчёт RUB/USD
--> комиссии и payment compatibility
--> liquidity score
--> risk filters
--> opportunity detection
--> Telegram/log signal
+DMarket реальные публичные офферы
+-> нормализация предмета
+-> Market.CSGO публичные buy orders
+-> расчет комиссий, RUB/USD, risk buffer и ликвидности
+-> Telegram сигнал или лог
 -> Paper Buy
--> виртуальный trade ban 7 дней
--> Paper Sell
--> actual PnL
+-> виртуальный 7-дневный trade ban
+-> Paper Sell по текущему buy order Market.CSGO
+-> фактический PnL
 ```
 
-## Архитектура проекта
+Реальные покупки и продажи в MVP отключены. Бот ничего не покупает на DMarket и ничего не продает на Market.CSGO. Он только проверяет, сработала бы стратегия в Paper Trading.
+
+## Что изменилось
+
+- LIS-SKINS отключен из базового контура.
+- DMarket включен как основной рынок покупки.
+- Market.CSGO используется как рынок продажи через публичные buy orders, а не через обычные листинги.
+- Mock-данные не используются по умолчанию.
+- `USE_MOCK_MARKETS=true` нужен только для локальных тестов.
+- Стартовый Paper Trading баланс: `10000 RUB`.
+
+## Архитектура
 
 ```text
+main.py
 app/
-  config.py                 # настройки из .env
-  logging_config.py          # консоль + logs/app.log
-  core/                      # enums и exceptions
-  db/                        # SQLite + SQLAlchemy models/repositories
-  markets/                   # Market.CSGO, LIS-SKINS, mock connectors
-  normalizer/                # нормализация названий предметов
-  currency/                  # RUB/USD engine
-  pricing/                   # комиссии, ROI, net profit
-  liquidity/                 # liquidity score
-  risk/                      # blacklist и risk filters
-  opportunities/             # поиск арбитража
-  paper_trading/             # virtual account, positions, Paper Buy/Sell
-  telegram_bot/              # Telegram notifier, handlers, command menu
-  scheduler/                 # фоновые asyncio loops
-  utils/                     # money/time/retry helpers
+  config.py                 # .env настройки
+  logging_config.py         # консоль + logs/app.log
+  db/                       # SQLAlchemy 2.x + SQLite
+  markets/                  # DMarket, Market.CSGO buy orders, mock, optional connectors
+  normalizer/               # нормализация market_hash_name
+  currency/                 # RUB/USD и spread
+  pricing/                  # net profit, fees, risk buffer
+  liquidity/                # liquidity_score 0..100
+  risk/                     # запреты, лимиты, blacklist
+  opportunities/            # детектор DMarket -> Market.CSGO.BuyOrder
+  paper_trading/            # Paper Buy, Paper Sell, trade ban, PnL
+  telegram_bot/             # команды, кнопки, меню Telegram
+  scheduler/                # фоновые polling loops
+data/cs2_arbitrage.db       # SQLite создается автоматически
+logs/app.log                # лог создается автоматически
+tests/
 ```
 
-SQLite-файл создаётся автоматически: `data/cs2_arbitrage.db`.
+## Как бот считает сигнал
 
-## Почему Market.CSGO и LIS-SKINS
+1. Берет реальные офферы DMarket через публичный endpoint `exchange/v1/market/items`.
+2. Берет реальные buy orders Market.CSGO через `api/v2/prices/orders/RUB.json`.
+3. Находит одинаковые предметы по `normalized_name`.
+4. Сравнивает минимальную цену покупки на DMarket с максимальным buy order на Market.CSGO.
+5. Считает:
+   - buy price;
+   - sell price;
+   - market fee;
+   - payment fee;
+   - currency conversion fee;
+   - risk buffer;
+   - expected net profit;
+   - ROI;
+   - liquidity score.
+6. Отправляет сигнал только если проходят пороги `MIN_PROFIT_RUB`, `MIN_ROI_PERCENT`, `MIN_LIQUIDITY_SCORE` и лимиты риска.
 
-В базовой версии используются только Market.CSGO и LIS-SKINS, потому что MVP ориентирован на RUB и платежи, подходящие пользователю из России.
-
-White.Market исключён из базовой версии. Waxpeer не включён по умолчанию из-за риска RUB -> USD конвертации и дополнительных комиссий. CS.MONEY запрещён полностью и не используется ни для покупки, ни для продажи, ни для сравнения цен, ни как источник fair price или market index.
-
-Третий рынок можно добавить только отдельным connector-ом после проверки: RUB, российские карты, MIR/YooMoney, конвертация, комиссии, официальный API, ликвидность, репутация и blacklist.
+Важно: Market.CSGO sell side здесь означает `Market.CSGO.BuyOrder`, то есть цену, по которой уже есть запрос на покупку.
 
 ## Paper Trading
 
-Стартовый виртуальный депозит: `10 000 ₽`.
+По умолчанию:
+
+```env
+TRADING_MODE=PAPER_TRADING
+PAPER_TRADING_ENABLED=true
+PAPER_TRADING_INITIAL_BALANCE_RUB=10000
+PAPER_TRADING_TRADE_BAN_DAYS=7
+PAPER_TRADING_SELL_MODE=MANUAL_SELL
+```
 
 Paper Buy:
 
-1. Повторно проверяет, что listing ещё доступен.
-2. Повторно получает актуальную цену.
-3. Пересчитывает комиссии и ROI.
-4. Проверяет virtual balance.
-5. Создаёт виртуальную позицию.
-6. Списывает `total_cost_rub`.
-7. Ставит статус `TRADE_LOCKED`.
-8. Ставит `trade_ban_until = bought_at + 7 days`.
+- повторно проверяет, что оффер DMarket еще есть;
+- повторно берет текущий buy order Market.CSGO;
+- пересчитывает прибыль;
+- списывает виртуальный баланс;
+- создает позицию;
+- ставит статус `TRADE_LOCKED`;
+- ставит trade ban на 7 дней.
 
 Paper Sell:
 
-1. Разрешён только после окончания trade ban.
-2. Берёт текущую цену предмета на целевом рынке.
-3. Считает комиссию продажи и withdrawal fee.
-4. Возвращает чистую выручку на paper balance.
-5. Фиксирует `actual_profit_rub` и `actual_roi_percent`.
+- доступен только после trade ban;
+- берет текущий buy order Market.CSGO;
+- считает комиссию продажи;
+- считает actual PnL;
+- возвращает виртуальную выручку на paper balance;
+- переводит позицию в `SOLD`.
 
-Главная аналитика стратегии: сравнение `expected_profit` в момент сигнала и `actual_profit` после 7-дневного trade ban.
+## Установка на пустой VPS
 
-## Расчёт прибыли
-
-```text
-net_profit =
-    expected_sell_price
-    - sell_market_fee
-    - buy_price
-    - buy_market_fee
-    - deposit_fee
-    - withdrawal_fee
-    - currency_conversion_fee
-    - expected_slippage
-    - risk_buffer
-```
-
-```text
-roi_percent = net_profit / total_cost * 100
-```
-
-Базовая валюта расчёта - RUB. USD считается дополнительно через `MANUAL_RUB_USD_RATE`.
-
-## Быстрый локальный запуск
-
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python main.py
-```
-
-На Windows:
-
-```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env
-python main.py
-```
-
-## Установка на пустой VPS с нуля
-
-Ниже команды для Ubuntu/Debian. Выполняй их на сервере по SSH.
-
-### 1. Обновить систему
+Команды ниже рассчитаны на Ubuntu/Debian сервер.
 
 ```bash
 sudo apt update
 sudo apt upgrade -y
-```
-
-### 2. Поставить базовые пакеты
-
-```bash
-sudo apt install -y python3 python3-venv python3-pip git screen ca-certificates curl nano
-```
-
-Проверить Python:
-
-```bash
+sudo apt install -y git python3 python3-venv python3-pip screen
 python3 --version
 ```
 
-Рекомендуется Python 3.11+, но проект совместим и с Python 3.10, который часто стоит по умолчанию на Ubuntu 22.04.
+Нужен Python 3.11+. Если на сервере Python старее 3.11, поставь более новый Python через пакеты твоего дистрибутива или обнови образ VPS до Ubuntu 24.04.
 
-### 3. Скачать проект
-
-Вариант A: через GitHub:
+Склонировать проект:
 
 ```bash
 cd /opt
@@ -158,271 +123,196 @@ sudo chown -R "$USER":"$USER" /opt/cs2_arbitrage_bot
 cd /opt/cs2_arbitrage_bot
 ```
 
-Вариант B: если папка проекта загружается с компьютера:
+Создать окружение и поставить зависимости:
 
 ```bash
-sudo mkdir -p /opt/cs2_arbitrage_bot
-sudo chown -R "$USER":"$USER" /opt/cs2_arbitrage_bot
-cd /opt/cs2_arbitrage_bot
-```
-
-Затем загрузи файлы проекта в `/opt/cs2_arbitrage_bot`, например через `scp`, SFTP или панель хостинга.
-
-### 4. Создать виртуальное окружение
-
-```bash
-cd /opt/cs2_arbitrage_bot
 python3 -m venv venv
 source venv/bin/activate
-```
-
-### 5. Установить зависимости
-
-```bash
-python -m pip install --upgrade pip
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 6. Создать `.env`
+Создать `.env`:
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Минимальный безопасный старт без Telegram и без API-ключей:
-
-```env
-USE_MOCK_MARKETS=true
-TELEGRAM_ENABLED=false
-TRADING_MODE=PAPER_TRADING
-PAPER_TRADING_INITIAL_BALANCE_RUB=10000
-```
-
-Старт с Telegram:
+Минимальные настройки:
 
 ```env
 TELEGRAM_ENABLED=true
-TELEGRAM_BOT_TOKEN=123456:telegram_token
-TELEGRAM_ADMIN_CHAT_ID=123456789
+TELEGRAM_BOT_TOKEN=сюда_токен_бота
+TELEGRAM_ADMIN_CHAT_ID=сюда_твой_chat_id
+
+USE_MOCK_MARKETS=false
+ENABLE_DMARKET=true
+ENABLE_MARKET_CSGO=true
+
+TRADING_MODE=PAPER_TRADING
+PAPER_TRADING_INITIAL_BALANCE_RUB=10000
+
+MANUAL_RUB_USD_RATE=100
 ```
 
-Если `USE_MOCK_MARKETS=true`, бот работает на mock-данных. Это нормальный режим для первой проверки.
+DMarket API key для текущего мониторинга не нужен: бот использует публичные рыночные офферы. Поля `DMARKET_PUBLIC_KEY` и `DMARKET_SECRET_KEY` оставлены под будущие подписанные методы, но реальные сделки в MVP все равно отключены.
 
-Если `USE_MOCK_MARKETS=false`, бот не подставляет mock-цены автоматически. При пустом `LIS_SKINS_API_KEY` live-листинги LIS-SKINS будут недоступны, и бот не должен присылать возможности с рынками `Mock.*`.
-
-Важно: DMarket не включён как базовый рынок. У DMarket есть официальный Trading API, но по официальным Terms/FAQ пользователи из России и Беларуси не могут выполнять депозиты, выводы и торговлю на платформе. Из-за этого DMarket не проходит payment compatibility для базовой версии проекта.
-
-При этом DMarket можно использовать как статистический источник. Для этого включён отдельный read-only connector `DMarket.Stats`:
-
-```env
-ENABLE_DMARKET_STATS=true
-DMARKET_STATS_LIMIT=50
-DMARKET_STATS_CURRENCY=USD
-DMARKET_STATS_TITLES=AWP | Asiimov (Field-Tested),AK-47 | Redline (Field-Tested),M4A1-S | Printstream (Minimal Wear),Desert Eagle | Printstream (Field-Tested),USP-S | Kill Confirmed (Field-Tested)
-ENABLE_STATS_SPREAD_SIGNALS=true
-MIN_STATS_SPREAD_PERCENT=8.0
-MIN_STATS_ABSOLUTE_SPREAD_RUB=100
-MAX_STATS_SIGNALS_PER_SCAN=5
-```
-
-`DMarket.Stats` сохраняет выборку офферов в SQLite и доступен через Telegram-команду `/dmarket_stats`. Он не участвует в арбитражных направлениях, не создаёт Paper Buy и не считается исполнимым рынком.
-
-Также бот сравнивает реальные цены `Market.CSGO` и `DMarket.Stats` по совпадающим `normalized_name` и может отправлять отдельные статистические spread alerts. Это не сделки и не Paper Buy, а индикатор расхождения цен между рынками.
-
-### 7. Проверить запуск
+Первый запуск:
 
 ```bash
 python main.py
 ```
 
-Если всё нормально, останови `Ctrl+C`.
-
-### 8. Запустить через screen
+Если до этого запускалась старая версия с mock/LIS и в Telegram приходили старые фейковые сигналы, очисти старую SQLite-базу:
 
 ```bash
-screen -S cs2-arb
+rm -f data/cs2_arbitrage.db
+python main.py
+```
+
+## Запуск через screen
+
+```bash
 cd /opt/cs2_arbitrage_bot
 source venv/bin/activate
+screen -S cs2bot
 python main.py
 ```
 
-Отсоединиться от screen, чтобы бот продолжал работать:
+Отключиться от screen, не останавливая бота:
 
 ```text
-Ctrl+A, затем D
-```
-
-Вернуться в окно:
-
-```bash
-screen -r cs2-arb
-```
-
-Остановить бота внутри screen:
-
-```text
-Ctrl+C
-```
-
-Закрыть screen-сессию после остановки:
-
-```bash
-exit
-```
-
-Посмотреть список screen-сессий:
-
-```bash
-screen -ls
-```
-
-Если нужно убить зависшую сессию:
-
-```bash
-screen -S cs2-arb -X quit
-```
-
-## Запуск через tmux
-
-```bash
-tmux new -s cs2-arb
-cd /opt/cs2_arbitrage_bot
-source venv/bin/activate
-python main.py
-```
-
-Отсоединиться:
-
-```text
-Ctrl+B, затем D
+Ctrl+A, потом D
 ```
 
 Вернуться:
 
 ```bash
-tmux attach -t cs2-arb
+screen -r cs2bot
 ```
 
-## Systemd service
+Остановить бота:
 
-Создать unit:
+```text
+Ctrl+C
+```
+
+Закрыть завершенную screen-сессию:
 
 ```bash
-sudo nano /etc/systemd/system/cs2-arbitrage.service
+exit
 ```
 
-Содержимое:
-
-```ini
-[Unit]
-Description=CS2 Arbitrage Bot
-After=network.target
-
-[Service]
-WorkingDirectory=/opt/cs2_arbitrage_bot
-ExecStart=/opt/cs2_arbitrage_bot/venv/bin/python main.py
-Restart=always
-RestartSec=5
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Запуск:
+Посмотреть сессии:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable cs2-arbitrage
-sudo systemctl start cs2-arbitrage
-sudo systemctl status cs2-arbitrage
+screen -ls
 ```
 
-Логи:
+## Обновление на VPS
 
 ```bash
-sudo journalctl -u cs2-arbitrage -f
+cd /opt/cs2_arbitrage_bot
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
 ```
 
-Остановка:
+Если после обновления остались старые mock opportunities:
 
 ```bash
-sudo systemctl stop cs2-arbitrage
+rm -f data/cs2_arbitrage.db
+python main.py
 ```
 
 ## Telegram
 
-Если Telegram включён, бот регистрирует меню команд в клиенте Telegram. Кнопка меню слева снизу покажет все команды с описаниями.
+Бот регистрирует меню команд в Telegram. Кнопка меню слева снизу показывает команды и описания.
 
-Команды:
+Основные команды:
 
 ```text
-/start - запуск и краткое описание
-/status - общий статус
-/balance - текущий paper-баланс
+/start - запуск и описание
+/status - статус Paper Trading
+/balance - paper balance
 /opportunities - активные opportunities
-/last - последние opportunities
-/settings - настройки режима
-/blacklist - blacklist и запрещённые рынки
-/pnl - PnL
-/positions - paper-позиции
-/pause - зарезервировано
-/resume - зарезервировано
-/payment_status - payment compatibility
-/markets - подключённые рынки
-/dmarket_stats - статистика DMarket без сделок
-/market_spreads - spread Market.CSGO и DMarket
-/paper_status - полный статус Paper Trading
-/paper_balance - виртуальный баланс
-/paper_positions - виртуальные позиции
-/paper_open - открытые позиции
-/paper_ready - готовые к продаже позиции
-/paper_sold - проданные позиции
-/paper_pnl - Paper Trading аналитика
-/paper_reset - зарезервировано
-/paper_settings - настройки Paper Trading
-/paper_buy <opportunity_id> - виртуальная покупка
-/paper_sell <position_id> - виртуальная продажа
+/positions - paper positions
+/dmarket_stats - последние офферы DMarket
+/market_spreads - диагностика DMarket vs Market.CSGO buy orders
+/paper_buy <opportunity_id> - Paper Buy вручную
+/paper_sell <position_id> - Paper Sell вручную
 /help - список команд
 ```
 
-Если Telegram выключен, сигналы пишутся в консоль и `logs/app.log`.
+В сигналах также есть inline-кнопка `Paper Buy`.
 
-## Реальные API
+## Режим без Telegram
 
-Market.CSGO connector держит endpoint-ы в одном месте:
+В `.env`:
 
-- `https://market.csgo.com/api/v2/prices/RUB.json`
-- `https://market.csgo.com/api/full-export/RUB.json`
-- `https://market.csgo.com/api/v2/full-history/all.json`
-
-У LIS-SKINS API может требовать авторизацию и формат может отличаться от публичных примеров. Поэтому endpoint-ы изолированы в `LisSkinsConnector.LISTINGS_ENDPOINT` и `BALANCE_ENDPOINT`; если формат API отличается, правится только connector.
-
-## Подготовка к публикации на GitHub
-
-В репозиторий должны попадать исходники, тесты, README, `.env.example`, `.gitignore`, `requirements.txt`.
-
-Не публиковать:
-
-```text
-.env
-venv/
-.venv/
-data/*.db
-logs/*.log
-__pycache__/
-.pytest_cache/
+```env
+TELEGRAM_ENABLED=false
 ```
 
-Эти пути уже добавлены в `.gitignore`.
+Тогда сигналы будут писаться в консоль и `logs/app.log`.
+
+## Важные настройки
+
+```env
+USE_MOCK_MARKETS=false
+ENABLE_DMARKET=true
+ENABLE_MARKET_CSGO=true
+
+MIN_PROFIT_RUB=100
+MIN_ROI_PERCENT=5.0
+MAX_BUY_PRICE_RUB=10000
+MIN_LIQUIDITY_SCORE=60
+
+MARKET_POLL_INTERVAL_SECONDS=30
+OPPORTUNITY_SCAN_INTERVAL_SECONDS=35
+
+BASE_CURRENCY=RUB
+SECONDARY_CURRENCY=USD
+MANUAL_RUB_USD_RATE=100
+CURRENCY_SPREAD_PERCENT=1.0
+```
+
+Если хочешь тестовые данные:
+
+```env
+USE_MOCK_MARKETS=true
+```
+
+Тогда бот будет использовать `Mock.DMarket` и `Mock.Market.CSGO.BuyOrder`. Это только для разработки.
+
+## Безопасность
+
+- API-ключи не хранятся в коде.
+- `.env` не должен попадать в Git.
+- Реальные `buy_item()` и `sell_item()` выбрасывают `RealTradingDisabledError`.
+- `PAPER_TRADING` не вызывает реальные buy/sell API.
+- `SIGNAL_ONLY` не вызывает реальные buy/sell API.
+- CS.MONEY запрещен кодом и не используется вообще.
+- White.Market запрещен.
+- Waxpeer не включен в базовую версию.
+- Перед Paper Buy цена и наличие проверяются повторно.
+- Один listing нельзя купить дважды в открытых paper-позициях.
+- Продажа до trade ban невозможна.
 
 ## Тесты
 
 ```bash
+source venv/bin/activate
 pytest
 ```
 
-## Риски
+## Ограничения MVP
 
-Арбитраж на скинах не гарантирует прибыль. Основные риски: изменение цены за 7 дней trade ban, низкая ликвидность, исчезновение listing, скрытые комиссии, курсовой spread, задержки вывода, ограничения рынков, неверные API-данные и false positive. Поэтому MVP намеренно работает без реальных покупок и продаж.
+- Это не торговый автомат.
+- Реальные покупки и продажи не реализованы.
+- DMarket используется для публичных офферов покупки в Paper Trading.
+- Market.CSGO используется как целевая сторона продажи по публичным buy orders.
+- Курс RUB/USD по умолчанию ручной, настрой `MANUAL_RUB_USD_RATE`.
+- Сигнал не гарантирует исполнение после 7-дневного trade ban: именно это и проверяет Paper Trading.

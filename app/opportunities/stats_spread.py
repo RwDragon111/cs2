@@ -42,16 +42,16 @@ class StatsSpreadDetector:
         for listing in listings:
             if not listing.available or listing.price_rub is None:
                 continue
-            if listing.market_name not in {"Market.CSGO", "DMarket.Stats"}:
+            if listing.market_name not in {"Market.CSGO.BuyOrder", "DMarket"}:
                 continue
             by_name.setdefault(listing.normalized_name, {}).setdefault(listing.market_name, []).append(listing)
 
         spreads: list[MarketStatsSpread] = []
         for normalized_name, markets in by_name.items():
-            if "Market.CSGO" not in markets or "DMarket.Stats" not in markets:
+            if "Market.CSGO.BuyOrder" not in markets or "DMarket" not in markets:
                 continue
-            market_csgo = min(markets["Market.CSGO"], key=lambda item: item.price_rub or Decimal("0"))
-            dmarket = min(markets["DMarket.Stats"], key=lambda item: item.price_rub or Decimal("0"))
+            market_csgo = max(markets["Market.CSGO.BuyOrder"], key=lambda item: item.price_rub or Decimal("0"))
+            dmarket = min(markets["DMarket"], key=lambda item: item.price_rub or Decimal("0"))
             signal = self._build(normalized_name, market_csgo, dmarket)
             if signal is not None:
                 spreads.append(signal)

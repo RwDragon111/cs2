@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class DMarketStatsConnector(BaseMarketConnector):
     market_name = "DMarket.Stats"
+    stats_only = True
     MARKET_ITEMS_ENDPOINT = "/exchange/v1/market/items"
     CSGO_GAME_ID = "a8db"
 
@@ -53,7 +54,7 @@ class DMarketStatsConnector(BaseMarketConnector):
                     continue
                 seen_ids.add(listing.id)
                 listings.append(listing)
-        logger.info("Fetched %s DMarket stats listings", len(listings))
+        logger.info("Fetched %s %s listings", len(listings), self.market_name)
         return listings
 
     async def _fetch_page(self, title: str | None = None, limit: int | None = None) -> list[MarketListing]:
@@ -108,7 +109,7 @@ class DMarketStatsConnector(BaseMarketConnector):
             tradable=bool(extra.get("tradable", True)) if extra else None,
             inspect_link=extra.get("inspectInGame") or extra.get("viewAtSteam"),
             created_at=utc_now(),
-            raw_payload={"stats_only": True, **item},
+            raw_payload={"stats_only": self.stats_only, **item},
         )
 
     def _extract_usd_price(self, item: dict[str, Any]) -> Decimal:
@@ -125,3 +126,8 @@ class DMarketStatsConnector(BaseMarketConnector):
         if "." in text:
             return amount
         return amount / Decimal("100")
+
+
+class DMarketConnector(DMarketStatsConnector):
+    market_name = "DMarket"
+    stats_only = False

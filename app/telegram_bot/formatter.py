@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from app.db.models import MarketListingORM, PaperPositionORM
 from app.markets.base import MarketListing
-from app.opportunities.stats_spread import MarketStatsSpread
 from app.opportunities.models import ArbitrageOpportunity
+from app.opportunities.stats_spread import MarketStatsSpread
 from app.paper_trading.paper_pnl import PaperAnalytics
 from app.utils.money import format_percent, format_rub, format_usd
 
 
 def format_opportunity(opportunity: ArbitrageOpportunity) -> str:
+    sell_label = (
+        f"{opportunity.sell_market} (лучший buy order)"
+        if opportunity.sell_market == "Market.CSGO.BuyOrder"
+        else opportunity.sell_market
+    )
     return (
         "Найдена арбитражная возможность\n\n"
         f"Предмет: {opportunity.item_name}\n\n"
@@ -17,10 +22,10 @@ def format_opportunity(opportunity: ArbitrageOpportunity) -> str:
         f"Цена: {format_rub(opportunity.buy_price_rub)}\n"
         f"Цена в USD: {format_usd(opportunity.buy_price_usd)}\n\n"
         "Продать:\n"
-        f"Маркет: {opportunity.sell_market}\n"
+        f"Маркет: {sell_label}\n"
         f"Ожидаемая цена: {format_rub(opportunity.expected_sell_price_rub)}\n"
         f"Цена в USD: {format_usd(opportunity.expected_sell_price_usd)}\n\n"
-        "Расчёт:\n"
+        "Расчет:\n"
         f"Комиссии всего: {format_rub(opportunity.total_fees_rub)}\n"
         f"Комиссии пополнения/вывода: {format_rub(opportunity.payment_fees_rub)}\n"
         f"Конвертация валют: {format_rub(opportunity.currency_conversion_fees_rub)}\n\n"
@@ -30,7 +35,8 @@ def format_opportunity(opportunity: ArbitrageOpportunity) -> str:
         f"Риск: {opportunity.risk_score}/100\n"
         f"Уверенность: {opportunity.confidence_score}/100\n\n"
         "Режим: PAPER_TRADING\n"
-        "Рекомендация: тестовая покупка"
+        "Реальная покупка НЕ выполняется.\n"
+        "Рекомендация: тестовая Paper Buy"
     )
 
 
@@ -44,7 +50,7 @@ def format_paper_buy(position: PaperPositionORM, balance_rub) -> str:
         f"Итого списано: {format_rub(position.total_cost_rub)}\n\n"
         f"Остаток paper balance: {format_rub(balance_rub)}\n\n"
         f"Trade ban до: {position.trade_ban_until:%Y-%m-%d %H:%M}\n"
-        "Продажа будет доступна через: 7 дней\n\n"
+        "Продажа будет доступна после trade ban.\n\n"
         "Режим: PAPER_TRADING\n"
         "Реальная покупка НЕ выполнялась."
     )
@@ -78,7 +84,7 @@ def format_position_ready(position: PaperPositionORM) -> str:
         f"Предмет: {position.item_name}\n"
         f"Позиция: {position.id}\n"
         f"Целевой маркет: {position.target_sell_market}\n"
-        f"Trade ban завершён: {position.trade_ban_until:%Y-%m-%d %H:%M}"
+        f"Trade ban завершен: {position.trade_ban_until:%Y-%m-%d %H:%M}"
     )
 
 
@@ -103,29 +109,22 @@ def format_paper_status(analytics: PaperAnalytics) -> str:
 def format_dmarket_stats(rows: list[MarketListingORM], total: int) -> str:
     if not rows:
         return (
-            "DMarket Stats\n\n"
+            "DMarket\n\n"
             "Локальная выборка пока пустая.\n"
-            "Проверь ENABLE_DMARKET_STATS=true и дождись первого market polling.\n\n"
-            "Важно: это статистика, не сигнал сделки. DMarket не используется для Paper Buy/Sell."
+            "Проверь ENABLE_DMARKET=true и дождись первого market polling."
         )
 
     lines = [
-        "DMarket Stats",
+        "DMarket",
         "",
-        "Источник: DMarket.Stats",
+        "Источник: реальные публичные офферы DMarket",
         f"Офферов в локальной выборке: {total}",
         "",
-        "Самые дешёвые позиции:",
+        "Самые дешевые позиции:",
     ]
     for row in rows:
         lines.append(f"- {row.normalized_name}: {format_usd(row.price_usd)} / {format_rub(row.price_rub)}")
-    lines.extend(
-        [
-            "",
-            "Важно: это статистика, не сигнал сделки.",
-            "DMarket не используется для Paper Buy/Sell и не участвует в арбитражных направлениях.",
-        ]
-    )
+    lines.extend(["", "DMarket участвует в Paper Trading как сторона покупки. Реальная покупка НЕ выполняется."])
     return "\n".join(lines)
 
 
@@ -144,8 +143,7 @@ def format_stats_spread(signal: MarketStatsSpread) -> str:
         "Статистика:\n"
         f"Разница: {format_rub(signal.spread_rub)}\n"
         f"Spread: {format_percent(signal.spread_percent)}\n\n"
-        "Тип: статистика, НЕ сделка\n"
-        "DMarket.Stats не используется для Paper Buy/Sell.\n"
+        "Тип: диагностика spread, без учета всех комиссий\n"
         "Реальная покупка НЕ выполнялась."
     )
 
@@ -170,16 +168,16 @@ def orm_listing_to_market_listing(row: MarketListingORM) -> MarketListing:
 def format_stats_spread_list(signals: list[MarketStatsSpread]) -> str:
     if not signals:
         return (
-            "Market.CSGO ↔ DMarket Stats\n\n"
+            "DMarket -> Market.CSGO buy orders\n\n"
             "Подходящих spread по текущей локальной выборке пока нет.\n"
             "Дождись первого polling или снизь пороги MIN_STATS_SPREAD_PERCENT / MIN_STATS_ABSOLUTE_SPREAD_RUB."
         )
-    lines = ["Market.CSGO ↔ DMarket Stats", "", "Топ spread:"]
+    lines = ["DMarket -> Market.CSGO buy orders", "", "Топ spread:"]
     for signal in signals:
         lines.append(
             f"- {signal.normalized_name}: {signal.cheaper_market} {format_rub(signal.cheaper_price_rub)} "
             f"vs {signal.expensive_market} {format_rub(signal.expensive_price_rub)} "
             f"({format_percent(signal.spread_percent)})"
         )
-    lines.extend(["", "Это статистика по реальным ценам, не сигнал сделки."])
+    lines.extend(["", "Это диагностика реальных цен; основной сигнал сделки считает комиссии и risk buffer."])
     return "\n".join(lines)

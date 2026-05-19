@@ -32,7 +32,8 @@ class PaperPositionStatus(str, Enum):
 
 class MarketName(str, Enum):
     MARKET_CSGO = "Market.CSGO"
-    LIS_SKINS = "LIS-SKINS"
-    MOCK_MARKET_A = "Mock.LIS-SKINS"
-    MOCK_MARKET_B = "Mock.Market.CSGO"
+    MARKET_CSGO_BUY_ORDER = "Market.CSGO.BuyOrder"
+    DMARKET = "DMarket"
+    MOCK_MARKET_A = "Mock.DMarket"
+    MOCK_MARKET_B = "Mock.Market.CSGO.BuyOrder"
     DMARKET_STATS = "DMarket.Stats"

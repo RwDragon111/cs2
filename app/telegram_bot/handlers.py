@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 
 from app.db.repositories import ListingRepository, OpportunityRepository, PaperRepository
+from app.opportunities.stats_spread import StatsSpreadDetector
 from app.paper_trading.account import PaperAccountService
 from app.paper_trading.paper_execution import PaperExecutionEngine
 from app.telegram_bot.commands import commands_help_text
-from app.opportunities.stats_spread import StatsSpreadDetector
 from app.telegram_bot.formatter import (
     format_dmarket_stats,
     format_paper_buy,
@@ -35,7 +35,9 @@ def create_router(
     @router.message(Command("start"))
     async def start(message: Message) -> None:
         await message.answer(
-            "CS2 Arbitrage Bot запущен. Реальные покупки в MVP отключены.\n\n"
+            "CS2 Arbitrage Bot запущен.\n\n"
+            "Рабочая схема: DMarket -> Market.CSGO buy orders.\n"
+            "Реальные покупки и продажи в MVP отключены, доступен только Paper Trading.\n\n"
             "Нажми кнопку меню Telegram слева снизу, чтобы увидеть все команды."
         )
 
@@ -60,7 +62,9 @@ def create_router(
             return
         lines = ["Активные opportunities:"]
         for row in rows:
-            lines.append(f"{row.id[:8]} | {row.normalized_name} | {row.expected_net_profit_rub} RUB | ROI {row.roi_percent}%")
+            lines.append(
+                f"{row.id[:8]} | {row.normalized_name} | {row.expected_net_profit_rub} RUB | ROI {row.roi_percent}%"
+            )
         await message.answer("\n".join(lines))
 
     @router.message(Command("positions", "paper_positions", "paper_open", "paper_ready", "paper_sold"))
@@ -76,28 +80,36 @@ def create_router(
 
     @router.message(Command("settings", "paper_settings"))
     async def settings(message: Message) -> None:
-        await message.answer("TRADING_MODE=PAPER_TRADING, реальные покупки/продажи отключены.")
+        await message.answer(
+            "TRADING_MODE=PAPER_TRADING\n"
+            "USE_MOCK_MARKETS=false\n"
+            "ENABLE_DMARKET=true\n"
+            "ENABLE_MARKET_CSGO=true\n"
+            "Реальные покупки/продажи отключены."
+        )
 
     @router.message(Command("blacklist"))
     async def blacklist(message: Message) -> None:
-        await message.answer("Blacklist управляется таблицей SQLite `blacklist`; CS.MONEY и White.Market запрещены кодом.")
+        await message.answer("Blacklist хранится в SQLite. CS.MONEY и White.Market запрещены кодом.")
 
     @router.message(Command("payment_status", "markets"))
     async def markets(message: Message) -> None:
         await message.answer(
-            "Базовые рынки: Market.CSGO и LIS-SKINS.\n"
-            "DMarket подключён только как статистический источник `DMarket.Stats`, без Paper Buy/Sell."
+            "Рабочая схема MVP: DMarket реальные офферы -> Market.CSGO лучший buy order.\n"
+            "LIS-SKINS отключен из базового контура.\n"
+            "Mock-данные используются только при USE_MOCK_MARKETS=true.\n"
+            "Реальные покупки и продажи в MVP не выполняются."
         )
 
     @router.message(Command("dmarket_stats"))
     async def dmarket_stats(message: Message) -> None:
-        rows = listing_repository.latest_by_market("DMarket.Stats", limit=10)
-        total = listing_repository.count_by_market("DMarket.Stats")
+        rows = listing_repository.latest_by_market("DMarket", limit=10)
+        total = listing_repository.count_by_market("DMarket")
         await message.answer(format_dmarket_stats(rows, total))
 
     @router.message(Command("market_spreads"))
     async def market_spreads(message: Message) -> None:
-        rows = listing_repository.latest_by_markets(["Market.CSGO", "DMarket.Stats"], limit_per_market=300)
+        rows = listing_repository.latest_by_markets(["Market.CSGO.BuyOrder", "DMarket"], limit_per_market=300)
         listings = [orm_listing_to_market_listing(row) for row in rows]
         detector = StatsSpreadDetector(min_spread_percent=0, min_spread_rub=0, max_signals=10)
         await message.answer(format_stats_spread_list(detector.detect(listings)))

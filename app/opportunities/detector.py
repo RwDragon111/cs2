@@ -183,8 +183,6 @@ class OpportunityDetector:
         buy = buy_market.replace("Mock.", "")
         sell = sell_market.replace("Mock.", "")
         allowed = {
-            ("LIS-SKINS", "Market.CSGO"),
-            ("Market.CSGO", "LIS-SKINS"),
+            ("DMarket", "Market.CSGO.BuyOrder"),
         }
         return (buy, sell) in allowed
-

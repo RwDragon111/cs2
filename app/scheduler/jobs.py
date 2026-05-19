@@ -6,10 +6,10 @@ import logging
 from app.config import Settings
 from app.currency.currency_engine import CurrencyEngine
 from app.markets.base import BaseMarketConnector, MarketFees, MarketListing, SaleRecord
-from app.markets.dmarket_stats import DMarketStatsConnector
-from app.markets.lis_skins import LisSkinsConnector, OptionalThirdMarketConnector
-from app.markets.market_csgo import MarketCsgoConnector
+from app.markets.dmarket_stats import DMarketConnector, DMarketStatsConnector
+from app.markets.market_csgo import MarketCsgoBuyOrderConnector
 from app.markets.mock_market import MockMarketConnector
+from app.markets.optional_third import OptionalThirdMarketConnector
 from app.pricing.fees import get_default_fees
 from app.utils.money import quantize_money
 
@@ -20,22 +20,22 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
     connectors: dict[str, BaseMarketConnector] = {}
     if settings.use_mock_markets:
         logger.info("Using mock market connectors")
-        connectors["Mock.LIS-SKINS"] = MockMarketConnector("Mock.LIS-SKINS", price_side="buy")
-        connectors["Mock.Market.CSGO"] = MockMarketConnector("Mock.Market.CSGO", price_side="sell")
+        connectors["Mock.DMarket"] = MockMarketConnector("Mock.DMarket", price_side="buy")
+        connectors["Mock.Market.CSGO.BuyOrder"] = MockMarketConnector("Mock.Market.CSGO.BuyOrder", price_side="sell")
     elif settings.enable_market_csgo:
         if not settings.market_csgo_api_key:
             logger.warning("MARKET_CSGO_API_KEY is empty; only public Market.CSGO endpoints will be used")
-        connectors["Market.CSGO"] = MarketCsgoConnector(
+        connectors["Market.CSGO.BuyOrder"] = MarketCsgoBuyOrderConnector(
             api_key=settings.market_csgo_api_key,
             base_url=settings.market_csgo_base_url,
             timeout_seconds=settings.request_timeout_seconds,
         )
-    if not settings.use_mock_markets and settings.enable_lis_skins:
-        if not settings.lis_skins_api_key:
-            logger.warning("LIS_SKINS_API_KEY is empty; LIS-SKINS live listings will be unavailable")
-        connectors["LIS-SKINS"] = LisSkinsConnector(
-            api_key=settings.lis_skins_api_key,
-            base_url=settings.lis_skins_base_url,
+    if not settings.use_mock_markets and settings.enable_dmarket:
+        connectors["DMarket"] = DMarketConnector(
+            base_url=settings.dmarket_api_base_url,
+            limit=settings.dmarket_stats_limit,
+            currency=settings.dmarket_stats_currency,
+            tracked_titles=settings.dmarket_tracked_titles,
             timeout_seconds=settings.request_timeout_seconds,
         )
     if settings.enable_third_market:

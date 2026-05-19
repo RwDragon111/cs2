@@ -11,8 +11,8 @@ def listing(market_name: str, price_rub: Decimal, price_usd: Decimal) -> MarketL
         market_name=market_name,
         item_name="AWP | Asiimov (Field-Tested)",
         normalized_name="AWP | Asiimov (Field-Tested)",
-        price=price_usd if market_name == "DMarket.Stats" else price_rub,
-        currency="USD" if market_name == "DMarket.Stats" else "RUB",
+        price=price_usd if market_name == "DMarket" else price_rub,
+        currency="USD" if market_name == "DMarket" else "RUB",
         price_rub=price_rub,
         price_usd=price_usd,
         created_at=utc_now(),
@@ -30,12 +30,12 @@ def test_stats_spread_detector_compares_market_csgo_and_dmarket():
     signals = detector.detect(
         [
             listing("Market.CSGO", Decimal("9000"), Decimal("90")),
-            listing("DMarket.Stats", Decimal("10500"), Decimal("105")),
+            listing("Market.CSGO.BuyOrder", Decimal("9000"), Decimal("90")),
+            listing("DMarket", Decimal("7500"), Decimal("75")),
         ]
     )
 
     assert len(signals) == 1
-    assert signals[0].cheaper_market == "Market.CSGO"
-    assert signals[0].expensive_market == "DMarket.Stats"
+    assert signals[0].cheaper_market == "DMarket"
+    assert signals[0].expensive_market == "Market.CSGO.BuyOrder"
     assert signals[0].spread_rub == Decimal("1500.00")
-

@@ -14,19 +14,11 @@ DEFAULT_FEES: dict[str, MarketFees] = {
         withdrawal_fee_percent=Decimal("2.0"),
         currency_conversion_fee_percent=Decimal("0"),
     ),
-    "LIS-SKINS": MarketFees(
-        market_name="LIS-SKINS",
+    "Market.CSGO.BuyOrder": MarketFees(
+        market_name="Market.CSGO.BuyOrder",
         buy_fee_percent=Decimal("0"),
         sell_fee_percent=Decimal("5"),
-        deposit_fee_percent=Decimal("1.0"),
-        withdrawal_fee_percent=Decimal("2.0"),
-        currency_conversion_fee_percent=Decimal("0"),
-    ),
-    "Mock.LIS-SKINS": MarketFees(
-        market_name="Mock.LIS-SKINS",
-        buy_fee_percent=Decimal("0"),
-        sell_fee_percent=Decimal("5"),
-        deposit_fee_percent=Decimal("1.0"),
+        deposit_fee_percent=Decimal("0"),
         withdrawal_fee_percent=Decimal("2.0"),
         currency_conversion_fee_percent=Decimal("0"),
     ),
@@ -38,6 +30,14 @@ DEFAULT_FEES: dict[str, MarketFees] = {
         withdrawal_fee_percent=Decimal("2.0"),
         currency_conversion_fee_percent=Decimal("0"),
     ),
+    "Mock.Market.CSGO.BuyOrder": MarketFees(
+        market_name="Mock.Market.CSGO.BuyOrder",
+        buy_fee_percent=Decimal("0"),
+        sell_fee_percent=Decimal("5"),
+        deposit_fee_percent=Decimal("0"),
+        withdrawal_fee_percent=Decimal("2.0"),
+        currency_conversion_fee_percent=Decimal("0"),
+    ),
     "DMarket.Stats": MarketFees(
         market_name="DMarket.Stats",
         buy_fee_percent=Decimal("0"),
@@ -45,6 +45,22 @@ DEFAULT_FEES: dict[str, MarketFees] = {
         deposit_fee_percent=Decimal("0"),
         withdrawal_fee_percent=Decimal("0"),
         currency_conversion_fee_percent=Decimal("3"),
+    ),
+    "DMarket": MarketFees(
+        market_name="DMarket",
+        buy_fee_percent=Decimal("0"),
+        sell_fee_percent=Decimal("5"),
+        deposit_fee_percent=Decimal("0"),
+        withdrawal_fee_percent=Decimal("0"),
+        currency_conversion_fee_percent=Decimal("0"),
+    ),
+    "Mock.DMarket": MarketFees(
+        market_name="Mock.DMarket",
+        buy_fee_percent=Decimal("0"),
+        sell_fee_percent=Decimal("5"),
+        deposit_fee_percent=Decimal("0"),
+        withdrawal_fee_percent=Decimal("0"),
+        currency_conversion_fee_percent=Decimal("0"),
     ),
 }
 

@@ -10,8 +10,8 @@ from app.markets.mock_market import MockMarketConnector
 
 async def test_pricing_engine_calculates_positive_net(settings):
     currency = CurrencyEngine(settings)
-    buy = with_prices((await MockMarketConnector("Mock.LIS-SKINS", "buy").fetch_listings())[0], currency)
-    sell = with_prices((await MockMarketConnector("Mock.Market.CSGO", "sell").fetch_listings())[0], currency)
+    buy = with_prices((await MockMarketConnector("Mock.DMarket", "buy").fetch_listings())[0], currency)
+    sell = with_prices((await MockMarketConnector("Mock.Market.CSGO.BuyOrder", "sell").fetch_listings())[0], currency)
     profiles = default_payment_profiles(settings)
     result = PricingEngine(settings).calculate(
         buy,
@@ -23,4 +23,3 @@ async def test_pricing_engine_calculates_positive_net(settings):
     )
     assert result.expected_net_profit_rub > Decimal("100")
     assert result.roi_percent > Decimal("5")
-

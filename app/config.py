@@ -16,14 +16,15 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_admin_chat_id: str = ""
 
-    use_mock_markets: bool = True
+    use_mock_markets: bool = False
     market_csgo_api_key: str = ""
-    lis_skins_api_key: str = ""
+    dmarket_public_key: str = ""
+    dmarket_secret_key: str = ""
 
     enable_market_csgo: bool = True
-    enable_lis_skins: bool = True
+    enable_dmarket: bool = True
     enable_third_market: bool = False
-    enable_dmarket_stats: bool = True
+    enable_dmarket_stats: bool = False
 
     trading_mode: Literal[
         "SIGNAL_ONLY",
@@ -50,8 +51,8 @@ class Settings(BaseSettings):
     min_profit_rub: Decimal = Decimal("100")
     min_profit_usd: Decimal = Decimal("1.00")
     min_roi_percent: Decimal = Decimal("5.0")
-    max_buy_price_rub: Decimal = Decimal("5000")
-    max_buy_price_usd: Decimal = Decimal("50")
+    max_buy_price_rub: Decimal = Decimal("10000")
+    max_buy_price_usd: Decimal = Decimal("100")
     max_daily_spend_rub: Decimal = Decimal("10000")
     max_open_positions: int = 10
 
@@ -60,13 +61,13 @@ class Settings(BaseSettings):
     max_allowed_currency_spread_percent: Decimal = Decimal("2.0")
     min_liquidity_score: int = 60
 
-    allow_markets_with_crypto_only: bool = False
+    allow_markets_with_crypto_only: bool = True
     max_payment_conversion_fee_percent: Decimal = Decimal("2.0")
     max_deposit_fee_percent: Decimal = Decimal("2.0")
     max_withdrawal_fee_percent: Decimal = Decimal("3.0")
 
     excluded_markets: str = "CS.MONEY,csmoney,cs.money,White.Market,white.market"
-    optional_market_candidates: str = "Waxpeer,DMarket,BitSkins,Skinport,CSFloat"
+    optional_market_candidates: str = "Waxpeer,BitSkins,Skinport,CSFloat"
 
     log_level: str = "INFO"
     log_file: str = "logs/app.log"
@@ -77,9 +78,8 @@ class Settings(BaseSettings):
     sales_history_interval_seconds: int = 900
 
     market_csgo_base_url: str = "https://market.csgo.com"
-    lis_skins_base_url: str = "https://lis-skins.com"
     dmarket_api_base_url: str = "https://api.dmarket.com"
-    dmarket_stats_limit: int = 50
+    dmarket_stats_limit: int = 100
     dmarket_stats_currency: str = "USD"
     dmarket_stats_titles: str = (
         "AWP | Asiimov (Field-Tested),"
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
         "Desert Eagle | Printstream (Field-Tested),"
         "USP-S | Kill Confirmed (Field-Tested)"
     )
-    enable_stats_spread_signals: bool = True
+    enable_stats_spread_signals: bool = False
     min_stats_spread_percent: Decimal = Decimal("8.0")
     min_stats_absolute_spread_rub: Decimal = Decimal("100")
     max_stats_signals_per_scan: int = 5

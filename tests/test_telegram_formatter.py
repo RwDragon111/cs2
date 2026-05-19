@@ -1,8 +1,9 @@
-from tests.conftest import detect_mock_opportunities
+from decimal import Decimal
+
 from app.opportunities.stats_spread import MarketStatsSpread
 from app.telegram_bot.formatter import format_opportunity, format_paper_status, format_stats_spread
 from app.utils.time import utc_now
-from decimal import Decimal
+from tests.conftest import detect_mock_opportunities
 
 
 async def test_telegram_formatter_contains_opportunity_fields(test_app):
@@ -10,6 +11,7 @@ async def test_telegram_formatter_contains_opportunity_fields(test_app):
     text = format_opportunity(opportunity)
     assert "Найдена арбитражная возможность" in text
     assert opportunity.item_name in text
+    assert "Market.CSGO.BuyOrder" in text
 
 
 def test_paper_status_formatter(settings, tmp_path):
@@ -24,13 +26,13 @@ def test_paper_status_formatter(settings, tmp_path):
     assert "Paper Trading Status" in format_paper_status(service.analytics())
 
 
-def test_stats_spread_formatter_marks_not_a_trade():
+def test_stats_spread_formatter_marks_diagnostic():
     text = format_stats_spread(
         MarketStatsSpread(
             id="test",
             normalized_name="AWP | Asiimov (Field-Tested)",
-            cheaper_market="Market.CSGO",
-            expensive_market="DMarket.Stats",
+            cheaper_market="DMarket",
+            expensive_market="Market.CSGO.BuyOrder",
             cheaper_listing_id="1",
             cheaper_price_rub=Decimal("9000"),
             expensive_price_rub=Decimal("10500"),
@@ -41,5 +43,5 @@ def test_stats_spread_formatter_marks_not_a_trade():
             detected_at=utc_now(),
         )
     )
-    assert "НЕ сделка" in text
-    assert "DMarket.Stats" in text
+    assert "диагностика spread" in text
+    assert "Market.CSGO.BuyOrder" in text
