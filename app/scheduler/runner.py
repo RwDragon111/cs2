@@ -8,10 +8,11 @@ from app.config import Settings
 from app.db.repositories import ListingRepository, OpportunityRepository
 from app.markets.base import BaseMarketConnector, MarketFees, MarketListing
 from app.opportunities.detector import OpportunityDetector
+from app.opportunities.stats_spread import StatsSpreadDetector
 from app.paper_trading.paper_execution import PaperExecutionEngine
 from app.scheduler.jobs import fetch_all_listings, fetch_sales_history_sample
 from app.telegram_bot.bot import TelegramBotRunner, TelegramNotifier
-from app.telegram_bot.formatter import format_opportunity, format_position_ready
+from app.telegram_bot.formatter import format_opportunity, format_position_ready, format_stats_spread
 from app.telegram_bot.keyboards import opportunity_keyboard, paper_sell_keyboard
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,13 @@ class SchedulerRunner:
         self._tasks: list[asyncio.Task] = []
         self.current_listings: list[MarketListing] = []
         self.sent_opportunity_ids: set[str] = set()
+        self.sent_stats_spread_ids: set[str] = set()
         self.notified_ready_position_ids: set[str] = set()
+        self.stats_spread_detector = StatsSpreadDetector(
+            min_spread_percent=self.settings.min_stats_spread_percent,
+            min_spread_rub=self.settings.min_stats_absolute_spread_rub,
+            max_signals=self.settings.max_stats_signals_per_scan,
+        )
 
     async def start(self) -> None:
         await self.telegram_runner.start()
@@ -98,6 +105,12 @@ class SchedulerRunner:
                         format_opportunity(opportunity),
                         reply_markup=opportunity_keyboard(opportunity),
                     )
+                if self.settings.enable_stats_spread_signals:
+                    for signal in self.stats_spread_detector.detect(self.current_listings):
+                        if signal.id in self.sent_stats_spread_ids:
+                            continue
+                        self.sent_stats_spread_ids.add(signal.id)
+                        await self.notifier.send_message(format_stats_spread(signal))
             except Exception as exc:
                 logger.exception("Opportunity detection job failed: %s", exc)
             await asyncio.sleep(self.settings.opportunity_scan_interval_seconds)
@@ -117,4 +130,3 @@ class SchedulerRunner:
             except Exception as exc:
                 logger.exception("Paper positions job failed: %s", exc)
             await asyncio.sleep(self.settings.paper_position_check_interval_seconds)
-

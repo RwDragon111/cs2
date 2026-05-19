@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from app.db.models import MarketListingORM, PaperPositionORM
+from app.markets.base import MarketListing
+from app.opportunities.stats_spread import MarketStatsSpread
 from app.opportunities.models import ArbitrageOpportunity
 from app.paper_trading.paper_pnl import PaperAnalytics
 from app.utils.money import format_percent, format_rub, format_usd
@@ -124,4 +126,60 @@ def format_dmarket_stats(rows: list[MarketListingORM], total: int) -> str:
             "DMarket не используется для Paper Buy/Sell и не участвует в арбитражных направлениях.",
         ]
     )
+    return "\n".join(lines)
+
+
+def format_stats_spread(signal: MarketStatsSpread) -> str:
+    return (
+        "Рыночный spread по реальным ценам\n\n"
+        f"Предмет: {signal.normalized_name}\n\n"
+        "Дешевле:\n"
+        f"Маркет: {signal.cheaper_market}\n"
+        f"Цена: {format_rub(signal.cheaper_price_rub)}\n"
+        f"Цена в USD: {format_usd(signal.cheaper_price_usd)}\n\n"
+        "Дороже:\n"
+        f"Маркет: {signal.expensive_market}\n"
+        f"Цена: {format_rub(signal.expensive_price_rub)}\n"
+        f"Цена в USD: {format_usd(signal.expensive_price_usd)}\n\n"
+        "Статистика:\n"
+        f"Разница: {format_rub(signal.spread_rub)}\n"
+        f"Spread: {format_percent(signal.spread_percent)}\n\n"
+        "Тип: статистика, НЕ сделка\n"
+        "DMarket.Stats не используется для Paper Buy/Sell.\n"
+        "Реальная покупка НЕ выполнялась."
+    )
+
+
+def orm_listing_to_market_listing(row: MarketListingORM) -> MarketListing:
+    return MarketListing(
+        id=row.listing_id,
+        market_name=row.market_name,
+        item_name=row.item_name,
+        normalized_name=row.normalized_name,
+        price=row.price,
+        currency=row.currency,
+        price_rub=row.price_rub,
+        price_usd=row.price_usd,
+        available=row.available,
+        tradable=row.tradable,
+        created_at=row.created_at,
+        raw_payload=row.raw_payload or {},
+    )
+
+
+def format_stats_spread_list(signals: list[MarketStatsSpread]) -> str:
+    if not signals:
+        return (
+            "Market.CSGO ↔ DMarket Stats\n\n"
+            "Подходящих spread по текущей локальной выборке пока нет.\n"
+            "Дождись первого polling или снизь пороги MIN_STATS_SPREAD_PERCENT / MIN_STATS_ABSOLUTE_SPREAD_RUB."
+        )
+    lines = ["Market.CSGO ↔ DMarket Stats", "", "Топ spread:"]
+    for signal in signals:
+        lines.append(
+            f"- {signal.normalized_name}: {signal.cheaper_market} {format_rub(signal.cheaper_price_rub)} "
+            f"vs {signal.expensive_market} {format_rub(signal.expensive_price_rub)} "
+            f"({format_percent(signal.spread_percent)})"
+        )
+    lines.extend(["", "Это статистика по реальным ценам, не сигнал сделки."])
     return "\n".join(lines)

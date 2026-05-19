@@ -219,9 +219,16 @@ TELEGRAM_ADMIN_CHAT_ID=123456789
 ENABLE_DMARKET_STATS=true
 DMARKET_STATS_LIMIT=50
 DMARKET_STATS_CURRENCY=USD
+DMARKET_STATS_TITLES=AWP | Asiimov (Field-Tested),AK-47 | Redline (Field-Tested),M4A1-S | Printstream (Minimal Wear),Desert Eagle | Printstream (Field-Tested),USP-S | Kill Confirmed (Field-Tested)
+ENABLE_STATS_SPREAD_SIGNALS=true
+MIN_STATS_SPREAD_PERCENT=8.0
+MIN_STATS_ABSOLUTE_SPREAD_RUB=100
+MAX_STATS_SIGNALS_PER_SCAN=5
 ```
 
 `DMarket.Stats` сохраняет выборку офферов в SQLite и доступен через Telegram-команду `/dmarket_stats`. Он не участвует в арбитражных направлениях, не создаёт Paper Buy и не считается исполнимым рынком.
+
+Также бот сравнивает реальные цены `Market.CSGO` и `DMarket.Stats` по совпадающим `normalized_name` и может отправлять отдельные статистические spread alerts. Это не сделки и не Paper Buy, а индикатор расхождения цен между рынками.
 
 ### 7. Проверить запуск
 
@@ -365,6 +372,7 @@ sudo systemctl stop cs2-arbitrage
 /payment_status - payment compatibility
 /markets - подключённые рынки
 /dmarket_stats - статистика DMarket без сделок
+/market_spreads - spread Market.CSGO и DMarket
 /paper_status - полный статус Paper Trading
 /paper_balance - виртуальный баланс
 /paper_positions - виртуальные позиции

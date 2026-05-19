@@ -6,7 +6,15 @@ from app.db.repositories import ListingRepository, OpportunityRepository, PaperR
 from app.paper_trading.account import PaperAccountService
 from app.paper_trading.paper_execution import PaperExecutionEngine
 from app.telegram_bot.commands import commands_help_text
-from app.telegram_bot.formatter import format_dmarket_stats, format_paper_buy, format_paper_sell, format_paper_status
+from app.opportunities.stats_spread import StatsSpreadDetector
+from app.telegram_bot.formatter import (
+    format_dmarket_stats,
+    format_paper_buy,
+    format_paper_sell,
+    format_paper_status,
+    format_stats_spread_list,
+    orm_listing_to_market_listing,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +95,13 @@ def create_router(
         total = listing_repository.count_by_market("DMarket.Stats")
         await message.answer(format_dmarket_stats(rows, total))
 
+    @router.message(Command("market_spreads"))
+    async def market_spreads(message: Message) -> None:
+        rows = listing_repository.latest_by_markets(["Market.CSGO", "DMarket.Stats"], limit_per_market=300)
+        listings = [orm_listing_to_market_listing(row) for row in rows]
+        detector = StatsSpreadDetector(min_spread_percent=0, min_spread_rub=0, max_signals=10)
+        await message.answer(format_stats_spread_list(detector.detect(listings)))
+
     @router.message(Command("pause", "resume", "paper_reset"))
     async def not_implemented(message: Message) -> None:
         await message.answer("Команда зарезервирована для следующей итерации MVP.")
@@ -138,4 +153,3 @@ def create_router(
             await message.answer(f"Paper Sell не выполнен: {exc}")
 
     return router
-

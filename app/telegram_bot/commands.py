@@ -16,6 +16,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("payment_status", "Совместимость рынков по платежам"),
     ("markets", "Подключённые рынки"),
     ("dmarket_stats", "DMarket статистика без сделок"),
+    ("market_spreads", "Spread Market.CSGO и DMarket"),
     ("paper_status", "Полный статус Paper Trading"),
     ("paper_balance", "Баланс виртуального счёта"),
     ("paper_positions", "Список виртуальных позиций"),
@@ -42,4 +43,3 @@ def build_bot_commands():
     from aiogram.types import BotCommand
 
     return [BotCommand(command=command, description=description) for command, description in BOT_COMMANDS]
-

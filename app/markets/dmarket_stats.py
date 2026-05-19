@@ -25,12 +25,14 @@ class DMarketStatsConnector(BaseMarketConnector):
         base_url: str = "https://api.dmarket.com",
         limit: int = 50,
         currency: str = "USD",
+        tracked_titles: list[str] | None = None,
         timeout_seconds: float = 20.0,
     ) -> None:
         super().__init__(api_key="", timeout_seconds=timeout_seconds)
         self.base_url = base_url.rstrip("/")
         self.limit = max(1, min(limit, 100))
         self.currency = currency.upper()
+        self.tracked_titles = tracked_titles or []
         if self.currency != "USD":
             logger.warning("DMarket stats connector supports USD only for RUB conversion; forcing USD")
             self.currency = "USD"
@@ -43,23 +45,35 @@ class DMarketStatsConnector(BaseMarketConnector):
             return response.json()
 
     async def fetch_listings(self) -> list[MarketListing]:
+        listings = await self._fetch_page()
+        seen_ids = {listing.id for listing in listings}
+        for title in self.tracked_titles:
+            for listing in await self._fetch_page(title=title, limit=min(self.limit, 20)):
+                if listing.id in seen_ids:
+                    continue
+                seen_ids.add(listing.id)
+                listings.append(listing)
+        logger.info("Fetched %s DMarket stats listings", len(listings))
+        return listings
+
+    async def _fetch_page(self, title: str | None = None, limit: int | None = None) -> list[MarketListing]:
         params = {
             "gameId": self.CSGO_GAME_ID,
             "currency": self.currency,
-            "limit": self.limit,
+            "limit": limit or self.limit,
             "orderBy": "price",
             "orderDir": "asc",
         }
+        if title:
+            params["title"] = title
         try:
             data = await self._get_json(self.MARKET_ITEMS_ENDPOINT, params=params)
         except Exception as exc:
-            logger.warning("DMarket stats request failed: %s", exc)
+            logger.warning("DMarket stats request failed for title=%s: %s", title or "*", exc)
             return []
 
         raw_items = data.get("objects", []) if isinstance(data, dict) else []
-        listings = [listing for item in raw_items if (listing := self._parse_item(item)) is not None]
-        logger.info("Fetched %s DMarket stats listings", len(listings))
-        return listings
+        return [listing for item in raw_items if (listing := self._parse_item(item)) is not None]
 
     async def get_fees(self) -> MarketFees:
         return MarketFees(market_name=self.market_name, buy_fee_percent=Decimal("0"), sell_fee_percent=Decimal("5"))

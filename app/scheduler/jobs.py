@@ -45,6 +45,7 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
             base_url=settings.dmarket_api_base_url,
             limit=settings.dmarket_stats_limit,
             currency=settings.dmarket_stats_currency,
+            tracked_titles=settings.dmarket_tracked_titles,
             timeout_seconds=settings.request_timeout_seconds,
         )
     return connectors

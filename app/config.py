@@ -81,6 +81,17 @@ class Settings(BaseSettings):
     dmarket_api_base_url: str = "https://api.dmarket.com"
     dmarket_stats_limit: int = 50
     dmarket_stats_currency: str = "USD"
+    dmarket_stats_titles: str = (
+        "AWP | Asiimov (Field-Tested),"
+        "AK-47 | Redline (Field-Tested),"
+        "M4A1-S | Printstream (Minimal Wear),"
+        "Desert Eagle | Printstream (Field-Tested),"
+        "USP-S | Kill Confirmed (Field-Tested)"
+    )
+    enable_stats_spread_signals: bool = True
+    min_stats_spread_percent: Decimal = Decimal("8.0")
+    min_stats_absolute_spread_rub: Decimal = Decimal("100")
+    max_stats_signals_per_scan: int = 5
     request_timeout_seconds: float = 20.0
     max_api_retries: int = 3
 
@@ -113,6 +124,10 @@ class Settings(BaseSettings):
     @property
     def optional_market_names(self) -> set[str]:
         return {item.strip() for item in self.optional_market_candidates.split(",") if item.strip()}
+
+    @property
+    def dmarket_tracked_titles(self) -> list[str]:
+        return [item.strip() for item in self.dmarket_stats_titles.split(",") if item.strip()]
 
     @property
     def telegram_ready(self) -> bool:

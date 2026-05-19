@@ -27,3 +27,8 @@ def test_dmarket_stats_connector_parses_market_item():
     assert listing.currency == "USD"
     assert listing.raw_payload["stats_only"] is True
 
+
+def test_dmarket_stats_connector_accepts_tracked_titles():
+    connector = DMarketStatsConnector(limit=10, tracked_titles=["AWP | Asiimov (Field-Tested)"])
+
+    assert connector.tracked_titles == ["AWP | Asiimov (Field-Tested)"]

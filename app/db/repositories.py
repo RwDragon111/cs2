@@ -82,6 +82,19 @@ class ListingRepository:
             ).all()
             return len(list(rows))
 
+    def latest_by_markets(self, market_names: list[str], limit_per_market: int = 200) -> list[MarketListingORM]:
+        rows: list[MarketListingORM] = []
+        with self.session_factory() as session:
+            for market_name in market_names:
+                stmt = (
+                    select(MarketListingORM)
+                    .where(MarketListingORM.market_name == market_name, MarketListingORM.available.is_(True))
+                    .order_by(MarketListingORM.price_rub.asc())
+                    .limit(limit_per_market)
+                )
+                rows.extend(session.scalars(stmt).all())
+        return rows
+
 
 class PaymentProfileRepository:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
