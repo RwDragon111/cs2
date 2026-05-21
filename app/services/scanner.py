@@ -102,25 +102,31 @@ class ArbitrageScanner:
         error_message: str | None = None
         try:
             source_mode = self.trading.get_mode()
-            offers, buy_orders = await asyncio.gather(
-                self.dmarket.fetch_offers(),
-                self.csgo_market.fetch_buy_orders(),
-            )
+            buy_orders = await self.csgo_market.fetch_buy_orders()
+            targeted_titles = self._select_dmarket_titles(buy_orders)
+            offers = await self.dmarket.fetch_offers(targeted_titles)
             ignored = self.ignored_items.names()
             best_orders = self._best_orders_by_name(buy_orders)
+            matching_offers = 0
+            price_filtered_offers = 0
+            liquidity_filtered_offers = 0
             for offer in offers:
                 if offer.market_hash_name.lower() in ignored or offer.item_name.lower() in ignored:
                     continue
                 order = best_orders.get(offer.market_hash_name)
                 if order is None:
                     continue
+                matching_offers += 1
                 if order.price_rub < self.settings.min_item_price or order.price_rub > self.settings.max_item_price:
+                    price_filtered_offers += 1
                     continue
 
                 history = await self.csgo_market.fetch_price_history(offer.market_hash_name, order.price_rub)
                 history.buy_order_count = max(history.buy_order_count, order.count)
                 liquidity = self.liquidity.score(order, history)
                 price_analysis = self.price_analyzer.analyze(order.price_rub, history)
+                if liquidity.score < self.settings.min_liquidity_score:
+                    liquidity_filtered_offers += 1
                 candidate = self.calculator.evaluate(
                     offer=offer,
                     order=order,
@@ -133,6 +139,17 @@ class ArbitrageScanner:
                 row, created = self.deals.upsert(candidate.to_orm_payload())
                 if created:
                     found.append(row)
+            logger.info(
+                "Scan checked %s CSGO buy orders, selected %s DMarket titles, got %s DMarket offers, "
+                "matched %s offers, price-filtered %s, liquidity-filtered %s, found %s new deals",
+                len(buy_orders),
+                len(targeted_titles),
+                len(offers),
+                matching_offers,
+                price_filtered_offers,
+                liquidity_filtered_offers,
+                len(found),
+            )
             self.status.last_error = None
         except Exception as exc:
             logger.exception("Arbitrage scan failed: %s", exc)
@@ -166,3 +183,43 @@ class ArbitrageScanner:
             if current is None or Decimal(order.price_rub) > Decimal(current.price_rub):
                 best[order.market_hash_name] = order
         return best
+
+    def _select_dmarket_titles(self, orders: list[BuyOrder]) -> list[str]:
+        candidates: list[tuple[Decimal, Decimal, int, str]] = []
+        for order in orders:
+            if order.price_rub < self.settings.min_item_price or order.price_rub > self.settings.max_item_price:
+                continue
+            liquidity_weight = Decimal(min(max(order.count, 1), 100))
+            candidates.append((order.price_rub * liquidity_weight, order.price_rub, order.count, order.item_name))
+
+        buckets = [
+            (self.settings.min_item_price, Decimal("1000")),
+            (Decimal("1000"), Decimal("3000")),
+            (Decimal("3000"), Decimal("10000")),
+            (Decimal("10000"), self.settings.max_item_price),
+        ]
+        titles: list[str] = []
+        seen: set[str] = set()
+        limit = max(1, min(self.settings.dmarket_dynamic_title_limit, 200))
+
+        def add_title(title: str) -> None:
+            key = title.lower()
+            if key not in seen and len(titles) < limit:
+                seen.add(key)
+                titles.append(title)
+
+        per_bucket = max(1, limit // len(buckets))
+        for low, high in buckets:
+            rows = [row for row in candidates if low <= row[1] < high]
+            rows.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
+            for _, _, _, title in rows[:per_bucket]:
+                add_title(title)
+                if len(titles) >= limit:
+                    break
+
+        candidates.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
+        for _, _, _, title in candidates:
+            add_title(title)
+            if len(titles) >= limit:
+                break
+        return titles

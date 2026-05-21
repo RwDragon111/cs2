@@ -32,7 +32,7 @@ class LiquidityScorer:
         order_score = min(35, buy_order_count * 5)
         sales_score = min(35, sales_7d * 2 + sales_30d // 10)
         spread_score = max(0, 20 - int(spread_percent))
-        history_score = 10 if not history.is_fallback else 3
+        history_score = 10 if not history.is_fallback else 8
         total = max(0, min(100, order_score + sales_score + spread_score + history_score))
 
         notes: list[str] = []

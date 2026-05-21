@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from decimal import Decimal
 from typing import Any
@@ -32,22 +33,114 @@ class DMarketClient:
         self.api_key = settings.dmarket_public_or_api_key
         self.api_secret = settings.dmarket_secret_or_legacy_key
 
-    async def fetch_offers(self) -> list[MarketOffer]:
+    async def fetch_offers(self, titles: list[str] | None = None) -> list[MarketOffer]:
         if self.settings.use_mock_markets:
             return self._mock_offers()
 
+        market_offers = await self._fetch_market_pages()
+        if titles:
+            targeted_offers = await self._fetch_offers_by_titles(titles)
+            offers = self._dedupe_offers([*market_offers, *targeted_offers])
+            logger.info(
+                "DMarket returned %s offers: %s price-filtered offers plus %s targeted offers for %s titles",
+                len(offers),
+                len(market_offers),
+                len(targeted_offers),
+                len(titles),
+            )
+            return offers
+
+        logger.info("DMarket returned %s price-filtered offers", len(market_offers))
+        return market_offers
+
+    async def _fetch_market_pages(self) -> list[MarketOffer]:
+        offers: list[MarketOffer] = []
+        cursor: str | None = None
+        seen: set[str] = set()
+        for _ in range(max(1, min(self.settings.dmarket_market_pages, 20))):
+            data = await self._fetch_market_page(cursor=cursor)
+            raw_items = data.get("objects", []) if isinstance(data, dict) else []
+            for item in raw_items:
+                offer = self._parse_offer(item)
+                if offer is None or offer.listing_id in seen:
+                    continue
+                seen.add(offer.listing_id)
+                offers.append(offer)
+            next_cursor = data.get("cursor") if isinstance(data, dict) else None
+            if not next_cursor or next_cursor == cursor:
+                break
+            cursor = str(next_cursor)
+        return offers
+
+    async def _fetch_market_page(self, cursor: str | None = None) -> dict[str, Any]:
         params = {
             "gameId": self.CSGO_GAME_ID,
             "currency": "USD",
             "limit": min(max(self.settings.dmarket_stats_limit, 1), 100),
             "orderBy": "price",
             "orderDir": "asc",
+            "priceFrom": self._rub_to_usd_cents(self.settings.min_item_price),
+            "priceTo": self._rub_to_usd_cents(self.settings.max_item_price),
         }
+        if cursor:
+            params["cursor"] = cursor
         data = await self._get_json(self.settings.dmarket_items_endpoint, params=params)
-        raw_items = data.get("objects", []) if isinstance(data, dict) else []
-        offers = [offer for item in raw_items if (offer := self._parse_offer(item)) is not None]
-        logger.info("DMarket returned %s offers", len(offers))
+        return data if isinstance(data, dict) else {}
+
+    async def _fetch_offers_by_titles(self, titles: list[str]) -> list[MarketOffer]:
+        seen_titles: set[str] = set()
+        clean_titles: list[str] = []
+        for title in titles:
+            clean = title.strip()
+            key = clean.lower()
+            if not clean or key in seen_titles:
+                continue
+            seen_titles.add(key)
+            clean_titles.append(clean)
+
+        semaphore = asyncio.Semaphore(max(1, min(self.settings.dmarket_search_concurrency, 10)))
+
+        async def fetch_title(title: str) -> list[MarketOffer]:
+            async with semaphore:
+                params = {
+                    "gameId": self.CSGO_GAME_ID,
+                    "currency": "USD",
+                    "limit": max(1, min(self.settings.dmarket_title_query_limit, 20)),
+                    "orderBy": "price",
+                    "orderDir": "asc",
+                    "title": title,
+                }
+                if self.settings.dmarket_title_search_delay_seconds:
+                    await asyncio.sleep(self.settings.dmarket_title_search_delay_seconds)
+                try:
+                    data = await self._get_json(self.settings.dmarket_items_endpoint, params=params)
+                except Exception as exc:
+                    logger.warning("DMarket title search failed for %s: %s", title, exc)
+                    return []
+                raw_items = data.get("objects", []) if isinstance(data, dict) else []
+                return [offer for item in raw_items if (offer := self._parse_offer(item)) is not None]
+
+        rows = await asyncio.gather(*(fetch_title(title) for title in clean_titles))
+        offers: list[MarketOffer] = []
+        seen_offers: set[str] = set()
+        for group in rows:
+            for offer in group:
+                if offer.listing_id in seen_offers:
+                    continue
+                seen_offers.add(offer.listing_id)
+                offers.append(offer)
         return offers
+
+    @staticmethod
+    def _dedupe_offers(offers: list[MarketOffer]) -> list[MarketOffer]:
+        result: list[MarketOffer] = []
+        seen: set[str] = set()
+        for offer in offers:
+            if offer.listing_id in seen:
+                continue
+            seen.add(offer.listing_id)
+            result.append(offer)
+        return result
 
     async def get_balance(self) -> MarketBalance:
         if not self.api_key or not self.api_secret:
@@ -111,6 +204,12 @@ class DMarketClient:
         text = str(value)
         amount = to_decimal(text)
         return amount if "." in text else amount / Decimal("100")
+
+    def _rub_to_usd_cents(self, value_rub: Decimal) -> int:
+        if self.settings.manual_rub_usd_rate <= 0:
+            return 0
+        usd = to_decimal(value_rub) / self.settings.manual_rub_usd_rate
+        return max(0, int(usd * Decimal("100")))
 
     def _mock_offers(self) -> list[MarketOffer]:
         return [
