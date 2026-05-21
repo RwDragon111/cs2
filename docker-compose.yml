@@ -1,0 +1,10 @@
+services:
+  cs2-arbitrage-bot:
+    build: .
+    container_name: cs2-arbitrage-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs

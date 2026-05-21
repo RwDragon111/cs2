@@ -59,7 +59,10 @@ def normalize_item_name(item_name: str) -> str:
     exterior = None
     if exterior_match:
         raw_exterior = exterior_match.group(1).lower().replace("-", " ")
-        exterior = EXTERIOR_ALIASES.get(raw_exterior, EXTERIOR_ALIASES.get(raw_exterior.replace(" ", "-"), exterior_match.group(1)))
+        exterior = EXTERIOR_ALIASES.get(
+            raw_exterior,
+            EXTERIOR_ALIASES.get(raw_exterior.replace(" ", "-"), exterior_match.group(1)),
+        )
         value = EXTERIOR_RE.sub("", value).strip()
 
     is_stattrak = "StatTrak™" in value

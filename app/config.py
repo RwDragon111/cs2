@@ -15,9 +15,13 @@ class Settings(BaseSettings):
     telegram_enabled: bool = True
     telegram_bot_token: str = ""
     telegram_admin_chat_id: str = ""
+    authorized_telegram_id: int = 0
 
     use_mock_markets: bool = False
     market_csgo_api_key: str = ""
+    csgo_market_api_key: str = ""
+    dmarket_api_key: str = ""
+    dmarket_api_secret: str = ""
     dmarket_public_key: str = ""
     dmarket_secret_key: str = ""
 
@@ -33,6 +37,8 @@ class Settings(BaseSettings):
         "AUTO_BUY_LIMITED",
         "AUTO_BUY_AND_SELL",
     ] = "PAPER_TRADING"
+    default_trading_mode: Literal["DEMO", "REAL"] = "DEMO"
+    allow_real_trading: bool = False
 
     paper_trading_enabled: bool = True
     paper_trading_initial_balance_rub: Decimal = Decimal("10000")
@@ -51,6 +57,10 @@ class Settings(BaseSettings):
     min_profit_rub: Decimal = Decimal("100")
     min_profit_usd: Decimal = Decimal("1.00")
     min_roi_percent: Decimal = Decimal("5.0")
+    min_profit_percent: Decimal = Decimal("5")
+    min_profit_absolute: Decimal = Decimal("100")
+    min_item_price: Decimal = Decimal("300")
+    max_item_price: Decimal = Decimal("50000")
     max_buy_price_rub: Decimal = Decimal("10000")
     max_buy_price_usd: Decimal = Decimal("100")
     max_daily_spend_rub: Decimal = Decimal("10000")
@@ -60,6 +70,14 @@ class Settings(BaseSettings):
     currency_spread_percent: Decimal = Decimal("1.0")
     max_allowed_currency_spread_percent: Decimal = Decimal("2.0")
     min_liquidity_score: int = 60
+    max_price_spike_percent: Decimal = Decimal("25")
+    price_history_days: int = 30
+    trade_lock_days: int = 8
+    dmarket_fee_percent: Decimal = Decimal("0")
+    csgo_market_fee_percent: Decimal = Decimal("5")
+    withdrawal_fee_percent: Decimal = Decimal("0")
+    demo_initial_balance: Decimal = Decimal("100000")
+    demo_currency: str = "RUB"
 
     allow_markets_with_crypto_only: bool = True
     max_payment_conversion_fee_percent: Decimal = Decimal("2.0")
@@ -74,11 +92,15 @@ class Settings(BaseSettings):
 
     market_poll_interval_seconds: int = 30
     opportunity_scan_interval_seconds: int = 35
+    scan_interval_seconds: int = 300
     paper_position_check_interval_seconds: int = 300
     sales_history_interval_seconds: int = 900
 
     market_csgo_base_url: str = "https://market.csgo.com"
     dmarket_api_base_url: str = "https://api.dmarket.com"
+    dmarket_items_endpoint: str = "/exchange/v1/market/items"
+    csgo_market_buy_orders_endpoint: str = "/api/v2/prices/orders/RUB.json"
+    csgo_market_balance_endpoint: str = "/api/v2/get-money"
     dmarket_stats_limit: int = 100
     dmarket_stats_currency: str = "USD"
     dmarket_market_pages: int = 3
@@ -125,6 +147,23 @@ class Settings(BaseSettings):
     def uppercase_mode(cls, value: str) -> str:
         return str(value).upper()
 
+    @field_validator("default_trading_mode", mode="before")
+    @classmethod
+    def uppercase_default_mode(cls, value: str) -> str:
+        return str(value).upper()
+
+    @field_validator("authorized_telegram_id", mode="before")
+    @classmethod
+    def parse_authorized_telegram_id(cls, value: object) -> int:
+        if value in {None, ""}:
+            return 0
+        return int(value)
+
+    @field_validator("demo_currency", mode="before")
+    @classmethod
+    def uppercase_demo_currency(cls, value: str) -> str:
+        return str(value).upper()
+
     @property
     def excluded_market_names(self) -> set[str]:
         return {item.strip().lower() for item in self.excluded_markets.split(",") if item.strip()}
@@ -139,7 +178,19 @@ class Settings(BaseSettings):
 
     @property
     def telegram_ready(self) -> bool:
-        return self.telegram_enabled and bool(self.telegram_bot_token and self.telegram_admin_chat_id)
+        return self.telegram_enabled and bool(self.telegram_bot_token and self.authorized_telegram_id)
+
+    @property
+    def dmarket_public_or_api_key(self) -> str:
+        return self.dmarket_api_key or self.dmarket_public_key
+
+    @property
+    def dmarket_secret_or_legacy_key(self) -> str:
+        return self.dmarket_api_secret or self.dmarket_secret_key
+
+    @property
+    def csgo_market_key(self) -> str:
+        return self.csgo_market_api_key or self.market_csgo_api_key
 
 
 @lru_cache

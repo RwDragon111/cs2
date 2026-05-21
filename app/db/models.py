@@ -148,6 +148,109 @@ class SettingORM(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
+class DealORM(Base):
+    __tablename__ = "deals"
+    __table_args__ = (UniqueConstraint("dedupe_key", name="uq_deals_dedupe_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dedupe_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    item_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    market_hash_name: Mapped[str] = mapped_column(String(300), nullable=False, index=True)
+    exterior: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    is_stattrak: Mapped[bool] = mapped_column(Boolean, default=False)
+    float_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    dmarket_listing_id: Mapped[str] = mapped_column(String(200), default="")
+    dmarket_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    csgo_buy_order_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    buy_price_with_fees: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    sell_price_after_fees: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    profit: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    roi: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    liquidity_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    risk_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_mode: Mapped[str] = mapped_column(String(10), default="DEMO", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="new", nullable=False)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class InventoryORM(Base):
+    __tablename__ = "inventory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id"), nullable=True)
+    item_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    market_hash_name: Mapped[str] = mapped_column(String(300), nullable=False, index=True)
+    buy_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    expected_sell_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    expected_profit: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
+    expected_roi: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
+    bought_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    trade_lock_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sell_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    actual_profit: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    actual_roi: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="trade_locked", nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class IgnoredItemORM(Base):
+    __tablename__ = "ignored_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    item_name: Mapped[str] = mapped_column(String(300), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ScanLogORM(Base):
+    __tablename__ = "scan_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    found_deals_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class TradingModeORM(Base):
+    __tablename__ = "trading_mode"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mode: Mapped[str] = mapped_column(String(10), default="DEMO", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class DemoAccountORM(Base):
+    __tablename__ = "demo_account"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    initial_balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), default="RUB", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class DemoTransactionORM(Base):
+    __tablename__ = "demo_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    type: Mapped[str] = mapped_column(String(50), nullable=False)
+    item_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    balance_before: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    balance_after: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    related_inventory_id: Mapped[int | None] = mapped_column(ForeignKey("inventory.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    comment: Mapped[str] = mapped_column(Text, default="")
+
+
 class MarketBalanceORM(Base):
     __tablename__ = "market_balances"
 
