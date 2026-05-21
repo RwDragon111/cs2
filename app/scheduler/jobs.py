@@ -12,6 +12,7 @@ from app.markets.market_csgo import MarketCsgoBuyOrderConnector
 from app.markets.mock_market import MockMarketConnector
 from app.markets.optional_third import OptionalThirdMarketConnector
 from app.pricing.fees import get_default_fees
+from app.utils.item_titles import expand_dmarket_title_variants
 from app.utils.money import quantize_money
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
             base_url=settings.dmarket_api_base_url,
             limit=settings.dmarket_stats_limit,
             currency=settings.dmarket_stats_currency,
-            tracked_titles=settings.dmarket_tracked_titles,
+            tracked_titles=[*settings.dmarket_tracked_titles, *settings.dmarket_extra_title_list],
             market_pages=settings.dmarket_market_pages,
             title_query_limit=settings.dmarket_title_query_limit,
             search_concurrency=settings.dmarket_search_concurrency,
@@ -50,7 +51,7 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
             base_url=settings.dmarket_api_base_url,
             limit=settings.dmarket_stats_limit,
             currency=settings.dmarket_stats_currency,
-            tracked_titles=settings.dmarket_tracked_titles,
+            tracked_titles=[*settings.dmarket_tracked_titles, *settings.dmarket_extra_title_list],
             market_pages=settings.dmarket_market_pages,
             title_query_limit=settings.dmarket_title_query_limit,
             search_concurrency=settings.dmarket_search_concurrency,
@@ -114,6 +115,13 @@ def select_dmarket_search_titles_from_buy_orders(
     candidates.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
     seen: set[str] = set()
     titles: list[str] = []
+    for title in settings.dmarket_extra_title_list:
+        for variant in expand_dmarket_title_variants(title):
+            key = variant.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            titles.append(variant)
     for _, _, _, title in candidates:
         key = title.lower()
         if key in seen:

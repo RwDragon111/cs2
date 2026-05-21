@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Iterable
@@ -389,6 +390,16 @@ class DealRepository:
                 .order_by(DealORM.roi.desc(), DealORM.profit.desc())
                 .limit(limit)
             )
+            return list(session.scalars(stmt).all())
+
+    def search(self, query: str, limit: int = 10, include_hidden: bool = False) -> list[DealORM]:
+        terms = [term for term in re.split(r"[^0-9A-Za-zА-Яа-я™★-]+", query) if len(term) > 1]
+        with self.session_factory() as session:
+            stmt = select(DealORM).order_by(DealORM.created_at.desc()).limit(limit)
+            if not include_hidden:
+                stmt = stmt.where(DealORM.status != "hidden")
+            for term in terms[:8]:
+                stmt = stmt.where(DealORM.item_name.ilike(f"%{term}%"))
             return list(session.scalars(stmt).all())
 
     def mark_status(self, deal_id: int, status: str) -> DealORM | None:

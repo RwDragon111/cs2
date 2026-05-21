@@ -24,11 +24,12 @@ from app.bot.messages import (
 )
 from app.config import Settings
 from app.core.exceptions import RealTradingDisabledError
-from app.db.repositories import DealRepository, InventoryRepository, ScanLogRepository, TradingStateRepository
+from app.db.repositories import DealRepository, InventoryRepository, ScanLogRepository, SettingsRepository, TradingStateRepository
 from app.markets.csgo_market_client import CSGOMarketClient
 from app.markets.dmarket_client import DMarketClient
 from app.services.inventory import InventoryService
 from app.services.scanner import ArbitrageScanner
+from app.utils.item_titles import extract_title_from_text, join_configured_titles, split_configured_titles
 
 
 class TelegramAuthMiddleware(BaseMiddleware):
@@ -61,6 +62,9 @@ def build_bot_commands():
         ("locked", "Trade lock"),
         ("ready", "Готово к продаже"),
         ("settings", "Фильтры"),
+        ("watch", "Точный DMarket-поиск"),
+        ("watchlist", "Список точного поиска"),
+        ("scan_item", "Проверить item/URL"),
         ("pause", "Пауза сканера"),
         ("resume", "Запуск сканера"),
         ("mode", "Режим DEMO/REAL"),
@@ -82,6 +86,7 @@ def create_router(
     inventory: InventoryRepository,
     trading: TradingStateRepository,
     scan_logs: ScanLogRepository,
+    settings_repo: SettingsRepository,
     inventory_service: InventoryService,
     dmarket: DMarketClient,
     csgo_market: CSGOMarketClient,
@@ -155,6 +160,69 @@ def create_router(
     @router.message(Command("settings"))
     async def settings_command(message: Message) -> None:
         await message.answer(format_settings(settings, trading.get_mode()))
+
+    @router.message(Command("watch"))
+    async def watch_command(message: Message) -> None:
+        title = _command_argument(message.text)
+        if not title:
+            await message.answer(
+                "Использование: /watch Kukri Knife | Blue Steel (Battle-Scarred)\n"
+                "Можно вставить ссылку DMarket или CSGO Market."
+            )
+            return
+        clean_title = extract_title_from_text(title)
+        current_titles = _watched_titles(settings_repo)
+        settings_repo.set("dmarket_watch_titles", join_configured_titles([*current_titles, clean_title]))
+        rows = await scanner.scan_once(notify=False, extra_titles=[clean_title])
+        if rows:
+            await message.answer(f"Добавил в наблюдение и нашёл новых сделок: {len(rows)}")
+            for row in rows[:5]:
+                await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
+            return
+        existing = deals.search(clean_title, limit=5)
+        if existing:
+            await message.answer(f"Добавил в наблюдение. Уже найденные сделки по этому предмету: {len(existing)}")
+            for row in existing:
+                await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
+            return
+        await message.answer(
+            f"Добавил в наблюдение: {clean_title}\n"
+            "Сделка появится в /deals, когда пройдёт фильтры прибыли, ликвидности и комиссий."
+        )
+
+    @router.message(Command("watchlist"))
+    async def watchlist_command(message: Message) -> None:
+        titles = [*settings.dmarket_extra_title_list, *_watched_titles(settings_repo)]
+        if not titles:
+            await message.answer("Список точного DMarket-поиска пуст. Добавь предмет командой /watch <название или URL>.")
+            return
+        await message.answer("Точный DMarket-поиск:\n" + "\n".join(f"- {title}" for title in titles))
+
+    @router.message(Command("scan_item"))
+    async def scan_item_command(message: Message) -> None:
+        title = _command_argument(message.text)
+        if not title:
+            await message.answer(
+                "Использование: /scan_item Kukri Knife | Blue Steel (Battle-Scarred)\n"
+                "Можно вставить ссылку DMarket или CSGO Market."
+            )
+            return
+        clean_title = extract_title_from_text(title)
+        rows = await scanner.scan_once(notify=False, extra_titles=[clean_title])
+        if not rows:
+            existing = deals.search(clean_title, limit=5)
+            if existing:
+                await message.answer(f"Новых сделок не создано, но в базе уже есть подходящие сделки: {len(existing)}")
+                for row in existing:
+                    await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
+                return
+            await message.answer(
+                f"Проверил: {clean_title}\n"
+                "Новых сделок не создано. Если предмет уже был найден раньше, посмотри /deals или /best."
+            )
+            return
+        for row in rows[:5]:
+            await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
 
     @router.message(Command("pause"))
     async def pause(message: Message) -> None:
@@ -333,3 +401,12 @@ def _callback_id(data: str | None) -> int:
     if not data or ":" not in data:
         raise ValueError("Callback id not found")
     return int(data.rsplit(":", 1)[1])
+
+
+def _command_argument(text: str | None) -> str:
+    parts = (text or "").split(maxsplit=1)
+    return parts[1].strip() if len(parts) == 2 else ""
+
+
+def _watched_titles(settings_repo: SettingsRepository) -> list[str]:
+    return split_configured_titles(settings_repo.get("dmarket_watch_titles", ""))

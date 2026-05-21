@@ -18,6 +18,7 @@ from app.db.repositories import (
     IgnoredItemRepository,
     InventoryRepository,
     ScanLogRepository,
+    SettingsRepository,
     TradingStateRepository,
 )
 from app.logging_config import setup_logging
@@ -37,6 +38,7 @@ async def async_main() -> None:
     inventory = InventoryRepository(session_factory)
     ignored_items = IgnoredItemRepository(session_factory)
     scan_logs = ScanLogRepository(session_factory)
+    settings_repo = SettingsRepository(session_factory)
     trading = TradingStateRepository(session_factory)
     trading.initialize(settings.default_trading_mode, settings.demo_initial_balance, settings.demo_currency)
 
@@ -68,6 +70,7 @@ async def async_main() -> None:
         ignored_items=ignored_items,
         scan_logs=scan_logs,
         trading=trading,
+        settings_repo=settings_repo,
         on_new_deal=notify_deal,
         on_critical_error=notify_text,
     )
@@ -92,6 +95,7 @@ async def async_main() -> None:
                 inventory=inventory,
                 trading=trading,
                 scan_logs=scan_logs,
+                settings_repo=settings_repo,
                 inventory_service=inventory_service,
                 dmarket=dmarket,
                 csgo_market=csgo_market,

@@ -9,13 +9,14 @@ from decimal import Decimal
 
 from app.config import Settings
 from app.db.models import DealORM
-from app.db.repositories import DealRepository, IgnoredItemRepository, ScanLogRepository, TradingStateRepository
+from app.db.repositories import DealRepository, IgnoredItemRepository, ScanLogRepository, SettingsRepository, TradingStateRepository
 from app.markets.csgo_market_client import CSGOMarketClient
 from app.markets.dmarket_client import DMarketClient
 from app.markets.types import BuyOrder
 from app.services.arbitrage import ArbitrageCalculator
 from app.services.liquidity import LiquidityScorer
 from app.services.price_analysis import PriceAnalyzer
+from app.utils.item_titles import expand_dmarket_title_variants, split_configured_titles
 from app.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class ArbitrageScanner:
         ignored_items: IgnoredItemRepository,
         scan_logs: ScanLogRepository,
         trading: TradingStateRepository,
+        settings_repo: SettingsRepository | None = None,
         on_new_deal: DealNotifier | None = None,
         on_critical_error: ErrorNotifier | None = None,
     ) -> None:
@@ -57,6 +59,7 @@ class ArbitrageScanner:
         self.ignored_items = ignored_items
         self.scan_logs = scan_logs
         self.trading = trading
+        self.settings_repo = settings_repo
         self.on_new_deal = on_new_deal
         self.on_critical_error = on_critical_error
         self.calculator = ArbitrageCalculator(settings)
@@ -66,6 +69,7 @@ class ArbitrageScanner:
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._scan_lock = asyncio.Lock()
+        self._title_rotation_index = 0
 
     async def start(self) -> None:
         if self._task is not None and not self._task.done():
@@ -91,11 +95,11 @@ class ArbitrageScanner:
     def resume(self) -> None:
         self.status.is_paused = False
 
-    async def scan_once(self, notify: bool = True) -> list[DealORM]:
+    async def scan_once(self, notify: bool = True, extra_titles: list[str] | None = None) -> list[DealORM]:
         async with self._scan_lock:
-            return await self._scan_once_locked(notify=notify)
+            return await self._scan_once_locked(notify=notify, extra_titles=extra_titles)
 
-    async def _scan_once_locked(self, notify: bool = True) -> list[DealORM]:
+    async def _scan_once_locked(self, notify: bool = True, extra_titles: list[str] | None = None) -> list[DealORM]:
         scan_log = self.scan_logs.start()
         self.status.last_scan_started_at = scan_log.started_at
         found: list[DealORM] = []
@@ -103,7 +107,7 @@ class ArbitrageScanner:
         try:
             source_mode = self.trading.get_mode()
             buy_orders = await self.csgo_market.fetch_buy_orders()
-            targeted_titles = self._select_dmarket_titles(buy_orders)
+            targeted_titles = self._select_dmarket_titles(buy_orders, extra_titles=extra_titles)
             offers = await self.dmarket.fetch_offers(targeted_titles)
             ignored = self.ignored_items.names()
             best_orders = self._best_orders_by_name(buy_orders)
@@ -184,7 +188,7 @@ class ArbitrageScanner:
                 best[order.market_hash_name] = order
         return best
 
-    def _select_dmarket_titles(self, orders: list[BuyOrder]) -> list[str]:
+    def _select_dmarket_titles(self, orders: list[BuyOrder], extra_titles: list[str] | None = None) -> list[str]:
         candidates: list[tuple[Decimal, Decimal, int, str]] = []
         for order in orders:
             if order.price_rub < self.settings.min_item_price or order.price_rub > self.settings.max_item_price:
@@ -192,34 +196,84 @@ class ArbitrageScanner:
             liquidity_weight = Decimal(min(max(order.count, 1), 100))
             candidates.append((order.price_rub * liquidity_weight, order.price_rub, order.count, order.item_name))
 
+        title_limit = max(1, min(self.settings.dmarket_dynamic_title_limit, 500))
+        titles: list[str] = []
+        seen: set[str] = set()
+
+        def add_title(title: str, force: bool = False, cap: int | None = None) -> bool:
+            clean = title.strip()
+            key = clean.lower()
+            if not clean or key in seen:
+                return False
+            if not force:
+                if cap is not None and len(titles) >= cap:
+                    return False
+                if len(titles) >= title_limit:
+                    return False
+            seen.add(key)
+            titles.append(clean)
+            return True
+
+        for priority_title in self._priority_dmarket_titles(extra_titles):
+            for variant in expand_dmarket_title_variants(priority_title):
+                add_title(variant, force=True)
+
+        if len(titles) >= title_limit or not candidates:
+            return titles
+
         buckets = [
             (self.settings.min_item_price, Decimal("1000")),
             (Decimal("1000"), Decimal("3000")),
             (Decimal("3000"), Decimal("10000")),
             (Decimal("10000"), self.settings.max_item_price),
         ]
-        titles: list[str] = []
-        seen: set[str] = set()
-        limit = max(1, min(self.settings.dmarket_dynamic_title_limit, 200))
-
-        def add_title(title: str) -> None:
-            key = title.lower()
-            if key not in seen and len(titles) < limit:
-                seen.add(key)
-                titles.append(title)
-
-        per_bucket = max(1, limit // len(buckets))
+        remaining = title_limit - len(titles)
+        score_budget = max(1, int(remaining * Decimal("0.60")))
+        score_cap = len(titles) + score_budget
+        per_bucket = max(1, score_budget // len(buckets))
         for low, high in buckets:
             rows = [row for row in candidates if low <= row[1] < high]
             rows.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
             for _, _, _, title in rows[:per_bucket]:
-                add_title(title)
-                if len(titles) >= limit:
+                add_title(title, cap=score_cap)
+                if len(titles) >= score_cap:
                     break
 
         candidates.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
         for _, _, _, title in candidates:
-            add_title(title)
-            if len(titles) >= limit:
+            add_title(title, cap=score_cap)
+            if len(titles) >= score_cap:
                 break
+
+        if len(titles) >= title_limit:
+            return titles
+
+        start = self._title_rotation_index % len(candidates)
+        added_from_rotation = 0
+        for offset in range(len(candidates)):
+            _, _, _, title = candidates[(start + offset) % len(candidates)]
+            if add_title(title):
+                added_from_rotation += 1
+            if len(titles) >= title_limit:
+                break
+        self._title_rotation_index = (start + max(added_from_rotation, 1)) % len(candidates)
+        return titles
+
+    def _priority_dmarket_titles(self, extra_titles: list[str] | None = None) -> list[str]:
+        configured = [
+            *self.settings.dmarket_tracked_titles,
+            *self.settings.dmarket_extra_title_list,
+            *(extra_titles or []),
+        ]
+        if self.settings_repo is not None:
+            configured.extend(split_configured_titles(self.settings_repo.get("dmarket_watch_titles", "")))
+
+        titles: list[str] = []
+        seen: set[str] = set()
+        for title in configured:
+            clean = title.strip()
+            key = clean.lower()
+            if clean and key not in seen:
+                seen.add(key)
+                titles.append(clean)
         return titles

@@ -368,6 +368,9 @@ sudo journalctl -u cs2-arbitrage-bot -f
 - `/locked` - предметы в trade lock.
 - `/ready` - предметы, готовые к продаже.
 - `/settings` - текущие фильтры и комиссии.
+- `/watch <название или URL>` - добавить предмет в точный DMarket-поиск. Можно вставить ссылку DMarket или CSGO Market.
+- `/watchlist` - показать предметы, которые всегда проверяются точечным поиском.
+- `/scan_item <название или URL>` - сразу проверить конкретный предмет без ожидания общего сканирования.
 - `/pause` - поставить сканер на паузу.
 - `/resume` - возобновить сканирование.
 - `/mode` - текущий режим `DEMO` или `REAL`.
@@ -398,7 +401,18 @@ DEFAULT_TRADING_MODE=DEMO
 ALLOW_REAL_TRADING=false
 DEMO_INITIAL_BALANCE=100000
 DEMO_CURRENCY=RUB
+MANUAL_RUB_USD_RATE=70.8
+DMARKET_DYNAMIC_TITLE_LIMIT=160
+DMARKET_EXTRA_TITLES=
 ```
+
+`DMARKET_EXTRA_TITLES` нужен для предметов, которые ты хочешь проверять всегда, даже если они не попали в автоматический топ buy orders. Пример:
+
+```env
+DMARKET_EXTRA_TITLES=Kukri Knife | Blue Steel (Battle-Scarred)
+```
+
+Для DMarket публичный API отдаёт цену в USD, поэтому `MANUAL_RUB_USD_RATE` должен примерно совпадать с курсом, который ты видишь на DMarket. Если курс стоит `100`, предмет за `$81.48` будет считаться как `8148 ₽` и такой оффер не пройдёт фильтр прибыли.
 
 ## 7. Безопасность
 

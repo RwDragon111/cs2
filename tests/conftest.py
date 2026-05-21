@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 import pytest
 
@@ -37,6 +38,8 @@ def settings(tmp_path) -> Settings:
         telegram_enabled=False,
         use_mock_markets=True,
         enable_dmarket_stats=False,
+        manual_rub_usd_rate=Decimal("100"),
+        dmarket_extra_titles="",
         market_poll_interval_seconds=1,
         opportunity_scan_interval_seconds=1,
         paper_position_check_interval_seconds=1,

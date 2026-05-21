@@ -7,6 +7,8 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.utils.item_titles import split_configured_titles
+
 
 class Settings(BaseSettings):
     app_env: str = "production"
@@ -107,7 +109,8 @@ class Settings(BaseSettings):
     dmarket_title_query_limit: int = 3
     dmarket_search_concurrency: int = 2
     dmarket_title_search_delay_seconds: float = 0.25
-    dmarket_dynamic_title_limit: int = 40
+    dmarket_dynamic_title_limit: int = 160
+    dmarket_extra_titles: str = ""
     market_csgo_buy_order_min_price_rub: Decimal = Decimal("100")
     market_csgo_buy_order_max_price_rub: Decimal = Decimal("20000")
     market_csgo_buy_order_min_volume: int = 1
@@ -175,6 +178,10 @@ class Settings(BaseSettings):
     @property
     def dmarket_tracked_titles(self) -> list[str]:
         return [item.strip() for item in self.dmarket_stats_titles.split(",") if item.strip()]
+
+    @property
+    def dmarket_extra_title_list(self) -> list[str]:
+        return split_configured_titles(self.dmarket_extra_titles)
 
     @property
     def telegram_ready(self) -> bool:
