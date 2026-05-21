@@ -45,6 +45,8 @@ class SchedulerRunner:
         self.current_listings: list[MarketListing] = []
         self.sent_opportunity_ids: set[str] = set()
         self.sent_stats_spread_ids: set[str] = set()
+        self.sent_market_scan_summary = False
+        self.sent_opportunity_scan_summary = False
         self.notified_ready_position_ids: set[str] = set()
         self.stats_spread_detector = StatsSpreadDetector(
             min_spread_percent=self.settings.min_stats_spread_percent,
@@ -81,11 +83,24 @@ class SchedulerRunner:
     async def market_poll_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                listings_by_market = await fetch_all_listings(self.connectors, self.opportunity_detector.currency_engine)
+                listings_by_market = await fetch_all_listings(
+                    self.connectors,
+                    self.opportunity_detector.currency_engine,
+                    self.settings,
+                )
                 self.current_listings = [listing for listings in listings_by_market.values() for listing in listings]
                 for market_name, listings in listings_by_market.items():
                     self.listing_repository.replace_market_listings(market_name, listings)
                 logger.info("Market polling updated %s listings", len(self.current_listings))
+                if not self.sent_market_scan_summary:
+                    self.sent_market_scan_summary = True
+                    await self.notifier.send_message(
+                        "Сканирование рынков запущено\n\n"
+                        f"Market.CSGO buy orders: {len(listings_by_market.get('Market.CSGO.BuyOrder', []))}\n"
+                        f"DMarket offers: {len(listings_by_market.get('DMarket', []))}\n\n"
+                        "Бот ищет направление DMarket -> Market.CSGO.BuyOrder. "
+                        "Если подходящей разницы после комиссий нет, сигнал сделки не отправляется."
+                    )
             except Exception as exc:
                 logger.exception("Market polling job failed: %s", exc)
             await asyncio.sleep(self.settings.market_poll_interval_seconds)
@@ -94,12 +109,40 @@ class SchedulerRunner:
         while not self._stop.is_set():
             try:
                 if not self.current_listings:
-                    self.current_listings = []
+                    logger.info("Opportunity scan is waiting for the first market polling result")
+                    await asyncio.sleep(self.settings.opportunity_scan_interval_seconds)
+                    continue
                 names = {listing.normalized_name for listing in self.current_listings}
                 histories = await fetch_sales_history_sample(self.connectors, names)
                 opportunities = self.opportunity_detector.detect(self.current_listings, histories)
                 self.opportunity_repository.save_many(opportunities)
                 self.opportunity_repository.expire_missing({opportunity.id for opportunity in opportunities})
+                logger.info(
+                    "Opportunity scan checked %s listings and found %s opportunities",
+                    len(self.current_listings),
+                    len(opportunities),
+                )
+                if not self.sent_opportunity_scan_summary:
+                    self.sent_opportunity_scan_summary = True
+                    dmarket_names = {
+                        listing.normalized_name
+                        for listing in self.current_listings
+                        if listing.market_name == "DMarket"
+                    }
+                    market_csgo_buy_order_names = {
+                        listing.normalized_name
+                        for listing in self.current_listings
+                        if listing.market_name == "Market.CSGO.BuyOrder"
+                    }
+                    await self.notifier.send_message(
+                        "Первый поиск арбитража выполнен\n\n"
+                        f"Проверено листингов: {len(self.current_listings)}\n"
+                        f"Совпадающих предметов DMarket/Market.CSGO buy orders: "
+                        f"{len(dmarket_names & market_csgo_buy_order_names)}\n"
+                        f"Сигналов после комиссий и фильтров: {len(opportunities)}\n\n"
+                        "Если сигналов 0, значит по текущим реальным ценам нет сделки, "
+                        "которая проходит MIN_PROFIT_RUB, MIN_ROI_PERCENT и MIN_LIQUIDITY_SCORE."
+                    )
                 for opportunity in opportunities:
                     if opportunity.id in self.sent_opportunity_ids:
                         continue

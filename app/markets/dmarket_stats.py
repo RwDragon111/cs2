@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 from decimal import Decimal
 from typing import Any
 
@@ -27,6 +28,10 @@ class DMarketStatsConnector(BaseMarketConnector):
         limit: int = 50,
         currency: str = "USD",
         tracked_titles: list[str] | None = None,
+        market_pages: int = 3,
+        title_query_limit: int = 3,
+        search_concurrency: int = 8,
+        title_search_delay_seconds: float = 0.25,
         timeout_seconds: float = 20.0,
     ) -> None:
         super().__init__(api_key="", timeout_seconds=timeout_seconds)
@@ -34,9 +39,26 @@ class DMarketStatsConnector(BaseMarketConnector):
         self.limit = max(1, min(limit, 100))
         self.currency = currency.upper()
         self.tracked_titles = tracked_titles or []
+        self.dynamic_titles: list[str] = []
+        self.market_pages = max(1, min(market_pages, 20))
+        self.title_query_limit = max(1, min(title_query_limit, 20))
+        self.search_concurrency = max(1, min(search_concurrency, 20))
+        self.title_search_delay_seconds = max(0.0, min(title_search_delay_seconds, 5.0))
         if self.currency != "USD":
             logger.warning("DMarket stats connector supports USD only for RUB conversion; forcing USD")
             self.currency = "USD"
+
+    def set_dynamic_titles(self, titles: list[str]) -> None:
+        seen: set[str] = set()
+        dynamic_titles: list[str] = []
+        for title in titles:
+            clean = title.strip()
+            key = clean.lower()
+            if not clean or key in seen:
+                continue
+            seen.add(key)
+            dynamic_titles.append(clean)
+        self.dynamic_titles = dynamic_titles
 
     @async_retry(attempts=3, retry_exceptions=(httpx.HTTPError,))
     async def _get_json(self, endpoint: str, params: dict[str, Any]) -> Any:
@@ -46,18 +68,77 @@ class DMarketStatsConnector(BaseMarketConnector):
             return response.json()
 
     async def fetch_listings(self) -> list[MarketListing]:
-        listings = await self._fetch_page()
+        listings = await self._fetch_market_pages()
         seen_ids = {listing.id for listing in listings}
-        for title in self.tracked_titles:
-            for listing in await self._fetch_page(title=title, limit=min(self.limit, 20)):
+        titles = self._combined_titles()
+
+        async def fetch_title(title: str) -> list[MarketListing]:
+            return await self._fetch_page(title=title, limit=self.title_query_limit)
+
+        semaphore = asyncio.Semaphore(self.search_concurrency)
+
+        async def guarded_fetch(title: str) -> list[MarketListing]:
+            async with semaphore:
+                if self.title_search_delay_seconds:
+                    await asyncio.sleep(self.title_search_delay_seconds)
+                return await fetch_title(title)
+
+        for rows in await asyncio.gather(*(guarded_fetch(title) for title in titles)):
+            for listing in rows:
                 if listing.id in seen_ids:
                     continue
                 seen_ids.add(listing.id)
                 listings.append(listing)
-        logger.info("Fetched %s %s listings", len(listings), self.market_name)
+        logger.info(
+            "Fetched %s %s listings from base page plus %s title searches",
+            len(listings),
+            self.market_name,
+            len(titles),
+        )
         return listings
 
+    async def _fetch_market_pages(self) -> list[MarketListing]:
+        listings: list[MarketListing] = []
+        seen_ids: set[str] = set()
+        cursor: str | None = None
+        for _ in range(self.market_pages):
+            data = await self._fetch_raw_page(limit=self.limit, cursor=cursor)
+            raw_items = data.get("objects", []) if isinstance(data, dict) else []
+            for item in raw_items:
+                listing = self._parse_item(item)
+                if listing is None or listing.id in seen_ids:
+                    continue
+                seen_ids.add(listing.id)
+                listings.append(listing)
+            next_cursor = data.get("cursor") if isinstance(data, dict) else None
+            if not next_cursor or next_cursor == cursor:
+                break
+            cursor = str(next_cursor)
+        return listings
+
+    def _combined_titles(self) -> list[str]:
+        seen: set[str] = set()
+        titles: list[str] = []
+        for title in [*self.dynamic_titles, *self.tracked_titles]:
+            clean = title.strip()
+            key = clean.lower()
+            if not clean or key in seen:
+                continue
+            seen.add(key)
+            titles.append(clean)
+        return titles
+
     async def _fetch_page(self, title: str | None = None, limit: int | None = None) -> list[MarketListing]:
+        data = await self._fetch_raw_page(title=title, limit=limit)
+        raw_items = data.get("objects", []) if isinstance(data, dict) else []
+        return [listing for item in raw_items if (listing := self._parse_item(item)) is not None]
+
+    async def _fetch_raw_page(
+        self,
+        title: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> Any:
         params = {
             "gameId": self.CSGO_GAME_ID,
             "currency": self.currency,
@@ -67,14 +148,13 @@ class DMarketStatsConnector(BaseMarketConnector):
         }
         if title:
             params["title"] = title
+        if cursor:
+            params["cursor"] = cursor
         try:
-            data = await self._get_json(self.MARKET_ITEMS_ENDPOINT, params=params)
+            return await self._get_json(self.MARKET_ITEMS_ENDPOINT, params=params)
         except Exception as exc:
             logger.warning("DMarket stats request failed for title=%s: %s", title or "*", exc)
-            return []
-
-        raw_items = data.get("objects", []) if isinstance(data, dict) else []
-        return [listing for item in raw_items if (listing := self._parse_item(item)) is not None]
+            return {}
 
     async def get_fees(self) -> MarketFees:
         return MarketFees(market_name=self.market_name, buy_fee_percent=Decimal("0"), sell_fee_percent=Decimal("5"))

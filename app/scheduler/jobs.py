@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from decimal import Decimal
 
 from app.config import Settings
 from app.currency.currency_engine import CurrencyEngine
@@ -36,6 +37,10 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
             limit=settings.dmarket_stats_limit,
             currency=settings.dmarket_stats_currency,
             tracked_titles=settings.dmarket_tracked_titles,
+            market_pages=settings.dmarket_market_pages,
+            title_query_limit=settings.dmarket_title_query_limit,
+            search_concurrency=settings.dmarket_search_concurrency,
+            title_search_delay_seconds=settings.dmarket_title_search_delay_seconds,
             timeout_seconds=settings.request_timeout_seconds,
         )
     if settings.enable_third_market:
@@ -46,6 +51,10 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
             limit=settings.dmarket_stats_limit,
             currency=settings.dmarket_stats_currency,
             tracked_titles=settings.dmarket_tracked_titles,
+            market_pages=settings.dmarket_market_pages,
+            title_query_limit=settings.dmarket_title_query_limit,
+            search_concurrency=settings.dmarket_search_concurrency,
+            title_search_delay_seconds=settings.dmarket_title_search_delay_seconds,
             timeout_seconds=settings.request_timeout_seconds,
         )
     return connectors
@@ -54,6 +63,7 @@ def build_connectors(settings: Settings) -> dict[str, BaseMarketConnector]:
 async def fetch_all_listings(
     connectors: dict[str, BaseMarketConnector],
     currency_engine: CurrencyEngine,
+    settings: Settings | None = None,
 ) -> dict[str, list[MarketListing]]:
     async def fetch_one(connector: BaseMarketConnector) -> tuple[str, list[MarketListing]]:
         try:
@@ -63,8 +73,56 @@ async def fetch_all_listings(
             logger.warning("Failed to fetch listings from %s: %s", connector.market_name, exc)
             return connector.market_name, []
 
+    if settings and not settings.use_mock_markets and "Market.CSGO.BuyOrder" in connectors and "DMarket" in connectors:
+        buy_order_connector = connectors["Market.CSGO.BuyOrder"]
+        buy_order_market, buy_order_listings = await fetch_one(buy_order_connector)
+        dmarket_connector = connectors["DMarket"]
+        if hasattr(dmarket_connector, "set_dynamic_titles"):
+            titles = select_dmarket_search_titles_from_buy_orders(buy_order_listings, settings)
+            dmarket_connector.set_dynamic_titles(titles)  # type: ignore[attr-defined]
+            logger.info(
+                "Selected %s Market.CSGO buy-order titles for DMarket search from %s buy orders",
+                len(titles),
+                len(buy_order_listings),
+            )
+
+        remaining = [connector for connector in connectors.values() if connector is not buy_order_connector]
+        results = await asyncio.gather(*(fetch_one(connector) for connector in remaining))
+        return dict([(buy_order_market, buy_order_listings), *results])
+
     results = await asyncio.gather(*(fetch_one(connector) for connector in connectors.values()))
     return dict(results)
+
+
+def select_dmarket_search_titles_from_buy_orders(
+    buy_orders: list[MarketListing],
+    settings: Settings,
+) -> list[str]:
+    candidates: list[tuple[Decimal, Decimal, int, str]] = []
+    for order in buy_orders:
+        price = order.price_rub or order.price
+        if price < settings.market_csgo_buy_order_min_price_rub:
+            continue
+        if price > settings.market_csgo_buy_order_max_price_rub:
+            continue
+        volume = int(order.raw_payload.get("volume") or order.raw_payload.get("count") or 0)
+        if volume < settings.market_csgo_buy_order_min_volume:
+            continue
+        liquidity_weight = Decimal(min(volume, 100) + 1)
+        candidates.append((price * liquidity_weight, price, volume, order.item_name))
+
+    candidates.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
+    seen: set[str] = set()
+    titles: list[str] = []
+    for _, _, _, title in candidates:
+        key = title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        titles.append(title)
+        if len(titles) >= settings.dmarket_dynamic_title_limit:
+            break
+    return titles
 
 
 async def fetch_fees(connectors: dict[str, BaseMarketConnector]) -> dict[str, MarketFees]:

@@ -70,6 +70,42 @@ tests/
 
 Важно: Market.CSGO sell side здесь означает `Market.CSGO.BuyOrder`, то есть цену, по которой уже есть запрос на покупку.
 
+## Как работает фоновое сканирование
+
+Бот не ждет команду в Telegram, чтобы искать сделки. После `python main.py` запускаются фоновые loop-задачи:
+
+- Market.CSGO polling берет все публичные buy orders.
+- Из buy orders выбираются ликвидные кандидаты по цене и объему.
+- По этим названиям бот делает поиск офферов на DMarket.
+- Параллельно бот берет несколько первых страниц DMarket через cursor-пагинацию.
+- Detector сравнивает минимальную цену покупки DMarket с максимальным buy order Market.CSGO.
+- Если сделка проходит комиссии, ROI, profit и liquidity, Telegram получает сигнал с кнопкой `Paper Buy`.
+
+При первом успешном polling бот отправляет служебное сообщение:
+
+```text
+Сканирование рынков запущено
+Market.CSGO buy orders: ...
+DMarket offers: ...
+```
+
+При первом поиске арбитража бот также сообщает, сколько предметов совпало и сколько сигналов прошло фильтры. Если сигналов `0`, это значит, что по текущим реальным ценам не нашлось сделки, которая проходит заданные пороги.
+
+Настройки глубины сканирования:
+
+```env
+DMARKET_MARKET_PAGES=3
+DMARKET_DYNAMIC_TITLE_LIMIT=40
+DMARKET_TITLE_QUERY_LIMIT=3
+DMARKET_SEARCH_CONCURRENCY=2
+DMARKET_TITLE_SEARCH_DELAY_SECONDS=0.25
+MARKET_CSGO_BUY_ORDER_MIN_PRICE_RUB=100
+MARKET_CSGO_BUY_ORDER_MAX_PRICE_RUB=20000
+MARKET_CSGO_BUY_ORDER_MIN_VOLUME=1
+```
+
+Если DMarket отвечает `429 Too Many Requests`, снизь `DMARKET_DYNAMIC_TITLE_LIMIT` и `DMARKET_SEARCH_CONCURRENCY` или увеличь `DMARKET_TITLE_SEARCH_DELAY_SECONDS`.
+
 ## Paper Trading
 
 По умолчанию:
@@ -272,6 +308,15 @@ MIN_LIQUIDITY_SCORE=60
 
 MARKET_POLL_INTERVAL_SECONDS=30
 OPPORTUNITY_SCAN_INTERVAL_SECONDS=35
+
+DMARKET_MARKET_PAGES=3
+DMARKET_DYNAMIC_TITLE_LIMIT=40
+DMARKET_TITLE_QUERY_LIMIT=3
+DMARKET_SEARCH_CONCURRENCY=2
+DMARKET_TITLE_SEARCH_DELAY_SECONDS=0.25
+MARKET_CSGO_BUY_ORDER_MIN_PRICE_RUB=100
+MARKET_CSGO_BUY_ORDER_MAX_PRICE_RUB=20000
+MARKET_CSGO_BUY_ORDER_MIN_VOLUME=1
 
 BASE_CURRENCY=RUB
 SECONDARY_CURRENCY=USD

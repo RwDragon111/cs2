@@ -34,6 +34,13 @@ def test_dmarket_stats_connector_accepts_tracked_titles():
     assert connector.tracked_titles == ["AWP | Asiimov (Field-Tested)"]
 
 
+def test_dmarket_connector_accepts_dynamic_titles():
+    connector = DMarketConnector(limit=10)
+    connector.set_dynamic_titles(["AWP | Asiimov (Field-Tested)", "AWP | Asiimov (Field-Tested)", ""])
+
+    assert connector.dynamic_titles == ["AWP | Asiimov (Field-Tested)"]
+
+
 def test_dmarket_connector_is_trade_side_market():
     connector = DMarketConnector(limit=10)
     listing = connector._parse_item(

@@ -34,6 +34,11 @@ class LiquidityEngine:
         sales_7d = sum(1 for sale in sales_history if sale.sold_at >= now - timedelta(days=7))
         sales_30d = sum(1 for sale in sales_history if sale.sold_at >= now - timedelta(days=30))
         active_listings = sum(1 for listing in listings if listing.normalized_name == item_name and listing.available)
+        buy_order_volume = sum(
+            int(listing.raw_payload.get("volume") or listing.raw_payload.get("count") or 0)
+            for listing in listings
+            if listing.normalized_name == item_name and listing.raw_payload.get("buy_order") is True
+        )
 
         spread_percent = Decimal("0")
         if buy_price_rub and sell_price_rub and sell_price_rub > 0:
@@ -44,9 +49,10 @@ class LiquidityEngine:
         score += min(sales_7d * 3, 25)
         score += min(sales_30d, 20)
         score += min(active_listings * 3, 15)
+        score += min(buy_order_volume, 35)
         if any(keyword in item_name.lower() for keyword in self.popular_keywords):
             score += 10
-        if sales_history:
+        if sales_history or buy_order_volume > 0:
             score += 5
         if spread_percent <= Decimal("10"):
             score += 10
@@ -61,4 +67,3 @@ class LiquidityEngine:
             active_listings=active_listings,
             spread_percent=spread_percent,
         )
-

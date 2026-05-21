@@ -81,6 +81,14 @@ class Settings(BaseSettings):
     dmarket_api_base_url: str = "https://api.dmarket.com"
     dmarket_stats_limit: int = 100
     dmarket_stats_currency: str = "USD"
+    dmarket_market_pages: int = 3
+    dmarket_title_query_limit: int = 3
+    dmarket_search_concurrency: int = 2
+    dmarket_title_search_delay_seconds: float = 0.25
+    dmarket_dynamic_title_limit: int = 40
+    market_csgo_buy_order_min_price_rub: Decimal = Decimal("100")
+    market_csgo_buy_order_max_price_rub: Decimal = Decimal("20000")
+    market_csgo_buy_order_min_volume: int = 1
     dmarket_stats_titles: str = (
         "AWP | Asiimov (Field-Tested),"
         "AK-47 | Redline (Field-Tested),"
