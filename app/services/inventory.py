@@ -11,7 +11,7 @@ from app.db.repositories import DealRepository, InventoryRepository, TradingStat
 from app.markets.csgo_market_client import CSGOMarketClient
 from app.markets.dmarket_client import DMarketClient
 from app.utils.money import percent_of, quantize_money, quantize_percent
-from app.utils.time import utc_now
+from app.utils.time import ensure_aware, utc_now
 
 
 @dataclass(slots=True)
@@ -81,7 +81,7 @@ class InventoryService:
         if item.status not in {"ready_to_sell", "listed", "trade_locked", "bought"}:
             raise RuntimeError("Item cannot be sold from current status")
         now = utc_now()
-        if item.trade_lock_until > now:
+        if ensure_aware(item.trade_lock_until) > now:
             raise RuntimeError("Trade lock еще активен")
 
         mode = self.trading.get_mode()

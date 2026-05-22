@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     dmarket_api_base_url: str = "https://api.dmarket.com"
     dmarket_items_endpoint: str = "/exchange/v1/market/items"
     csgo_market_buy_orders_endpoint: str = "/api/v2/prices/orders/RUB.json"
+    csgo_market_sell_prices_endpoint: str = "/api/v2/prices/RUB.json"
+    csgo_market_price_history_index_endpoint: str = "/api/v2/full-history/all.json"
+    csgo_market_price_history_item_endpoint: str = "/api/v2/full-history/{item_id}.json"
     csgo_market_balance_endpoint: str = "/api/v2/get-money"
     dmarket_stats_limit: int = 100
     dmarket_stats_currency: str = "USD"

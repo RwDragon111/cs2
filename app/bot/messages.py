@@ -8,8 +8,9 @@ from app.db.models import DealORM, DemoAccountORM, InventoryORM, ScanLogORM
 from app.markets.types import MarketBalance
 from app.services.inventory import DemoStats
 from app.services.scanner import ScannerStatus
+from app.utils.market_links import deal_links_text
 from app.utils.money import format_percent, format_rub
-from app.utils.time import utc_now
+from app.utils.time import ensure_aware, utc_now
 
 
 def mode_label(mode: str) -> str:
@@ -69,6 +70,8 @@ def format_deal_details(deal: DealORM, mode: str) -> str:
         f"Цена после комиссий продажи: {format_rub(deal.sell_price_after_fees)}",
         f"Risk score: {deal.risk_score}/100",
         f"Статус: {deal.status}",
+        "",
+        deal_links_text(deal.item_name),
     ]
     if notes:
         lines.append("")
@@ -149,9 +152,10 @@ def format_inventory(items: list[InventoryORM], title: str = "Inventory") -> str
     lines = [title, ""]
     now = utc_now()
     for item in items:
-        left = item.trade_lock_until - now
+        trade_lock_until = ensure_aware(item.trade_lock_until)
+        left = trade_lock_until - now
         left_days = max(0, left.days)
-        lock_text = "готов к продаже" if item.trade_lock_until <= now else f"осталось {left_days} дн."
+        lock_text = "готов к продаже" if trade_lock_until <= now else f"осталось {left_days} дн."
         tag = "DEMO" if item.is_demo else "REAL"
         lines.append(
             f"#{item.id} | {tag} | {item.status} | {item.item_name} | buy {format_rub(item.buy_price)} | sell {format_rub(item.expected_sell_price)} | {lock_text}"

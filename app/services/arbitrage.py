@@ -60,6 +60,14 @@ class ArbitrageCalculator:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    def passes_profit_filters(self, offer: MarketOffer, order: BuyOrder) -> bool:
+        if offer.price_rub < self.settings.min_item_price:
+            return False
+        if offer.price_rub > self.settings.max_item_price:
+            return False
+        _, _, _, _, profit, roi = self._estimate_prices(offer, order)
+        return profit >= self.settings.min_profit_absolute and roi >= self.settings.min_profit_percent
+
     def evaluate(
         self,
         offer: MarketOffer,
@@ -75,17 +83,7 @@ class ArbitrageCalculator:
         if liquidity.score < self.settings.min_liquidity_score:
             return None
 
-        buy_fee = percent_of(offer.price_rub, self.settings.dmarket_fee_percent)
-        buy_price_with_fees = quantize_money(offer.price_rub + buy_fee)
-
-        sell_fee_percent = self.settings.csgo_market_fee_percent + self.settings.withdrawal_fee_percent
-        sell_fee = percent_of(order.price_rub, sell_fee_percent)
-        sell_price_after_fees = quantize_money(order.price_rub - sell_fee)
-
-        profit = quantize_money(sell_price_after_fees - buy_price_with_fees)
-        if buy_price_with_fees <= 0:
-            return None
-        roi = quantize_percent(profit / buy_price_with_fees * Decimal("100"))
+        buy_fee, buy_price_with_fees, sell_fee, sell_price_after_fees, profit, roi = self._estimate_prices(offer, order)
 
         if profit < self.settings.min_profit_absolute:
             return None
@@ -150,6 +148,24 @@ class ArbitrageCalculator:
         if analysis.is_history_fallback:
             base = max(base, 55)
         return min(100, base)
+
+    def _estimate_prices(
+        self,
+        offer: MarketOffer,
+        order: BuyOrder,
+    ) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal, Decimal]:
+        buy_fee = percent_of(offer.price_rub, self.settings.dmarket_fee_percent)
+        buy_price_with_fees = quantize_money(offer.price_rub + buy_fee)
+        sell_fee_percent = self.settings.csgo_market_fee_percent + self.settings.withdrawal_fee_percent
+        sell_fee = percent_of(order.price_rub, sell_fee_percent)
+        sell_price_after_fees = quantize_money(order.price_rub - sell_fee)
+        profit = quantize_money(sell_price_after_fees - buy_price_with_fees)
+        roi = (
+            quantize_percent(profit / buy_price_with_fees * Decimal("100"))
+            if buy_price_with_fees > 0
+            else Decimal("0")
+        )
+        return buy_fee, buy_price_with_fees, sell_fee, sell_price_after_fees, profit, roi
 
     @staticmethod
     def _dedupe_key(offer: MarketOffer, order: BuyOrder) -> str:

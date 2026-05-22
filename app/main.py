@@ -59,7 +59,7 @@ async def async_main() -> None:
         await bot.send_message(
             chat_id=settings.authorized_telegram_id,
             text=format_deal(deal, trading.get_mode()),
-            reply_markup=deal_keyboard(deal.id),
+            reply_markup=deal_keyboard(deal.id, deal.item_name),
         )
 
     scanner = ArbitrageScanner(

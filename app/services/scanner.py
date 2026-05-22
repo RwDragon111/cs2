@@ -113,6 +113,7 @@ class ArbitrageScanner:
             best_orders = self._best_orders_by_name(buy_orders)
             matching_offers = 0
             price_filtered_offers = 0
+            profit_filtered_offers = 0
             liquidity_filtered_offers = 0
             for offer in offers:
                 if offer.market_hash_name.lower() in ignored or offer.item_name.lower() in ignored:
@@ -123,6 +124,9 @@ class ArbitrageScanner:
                 matching_offers += 1
                 if order.price_rub < self.settings.min_item_price or order.price_rub > self.settings.max_item_price:
                     price_filtered_offers += 1
+                    continue
+                if not self.calculator.passes_profit_filters(offer, order):
+                    profit_filtered_offers += 1
                     continue
 
                 history = await self.csgo_market.fetch_price_history(offer.market_hash_name, order.price_rub)
@@ -145,12 +149,13 @@ class ArbitrageScanner:
                     found.append(row)
             logger.info(
                 "Scan checked %s CSGO buy orders, selected %s DMarket titles, got %s DMarket offers, "
-                "matched %s offers, price-filtered %s, liquidity-filtered %s, found %s new deals",
+                "matched %s offers, price-filtered %s, profit-filtered %s, liquidity-filtered %s, found %s new deals",
                 len(buy_orders),
                 len(targeted_titles),
                 len(offers),
                 matching_offers,
                 price_filtered_offers,
+                profit_filtered_offers,
                 liquidity_filtered_offers,
                 len(found),
             )

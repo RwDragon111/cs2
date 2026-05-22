@@ -371,6 +371,8 @@ sudo journalctl -u cs2-arbitrage-bot -f
 - `/watch <название или URL>` - добавить предмет в точный DMarket-поиск. Можно вставить ссылку DMarket или CSGO Market.
 - `/watchlist` - показать предметы, которые всегда проверяются точечным поиском.
 - `/scan_item <название или URL>` - сразу проверить конкретный предмет без ожидания общего сканирования.
+- В карточке сделки есть кнопки `DMarket` и `CSGO Market` для быстрого открытия предмета на обеих площадках.
+- Кнопки `Скрыть сделку`, `Отметить как куплено` и `Отметить как продано` удаляют исходную карточку из чата после успешного действия.
 - `/pause` - поставить сканер на паузу.
 - `/resume` - возобновить сканирование.
 - `/mode` - текущий режим `DEMO` или `REAL`.
@@ -404,6 +406,8 @@ DEMO_CURRENCY=RUB
 MANUAL_RUB_USD_RATE=70.8
 DMARKET_DYNAMIC_TITLE_LIMIT=160
 DMARKET_EXTRA_TITLES=
+CSGO_MARKET_PRICE_HISTORY_INDEX_ENDPOINT=/api/v2/full-history/all.json
+CSGO_MARKET_PRICE_HISTORY_ITEM_ENDPOINT=/api/v2/full-history/{item_id}.json
 ```
 
 `DMARKET_EXTRA_TITLES` нужен для предметов, которые ты хочешь проверять всегда, даже если они не попали в автоматический топ buy orders. Пример:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from decimal import Decimal
 from typing import Any
 
@@ -132,7 +133,7 @@ def create_router(
             return
         await message.answer(format_deals_list(rows, mode))
         for row in rows:
-            await message.answer(format_deal(row, mode), reply_markup=deal_keyboard(row.id))
+            await message.answer(format_deal(row, mode), reply_markup=deal_keyboard(row.id, row.item_name))
 
     @router.message(Command("best"))
     async def best(message: Message) -> None:
@@ -177,13 +178,13 @@ def create_router(
         if rows:
             await message.answer(f"Добавил в наблюдение и нашёл новых сделок: {len(rows)}")
             for row in rows[:5]:
-                await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
+                await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
             return
         existing = deals.search(clean_title, limit=5)
         if existing:
             await message.answer(f"Добавил в наблюдение. Уже найденные сделки по этому предмету: {len(existing)}")
             for row in existing:
-                await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
+                await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
             return
         await message.answer(
             f"Добавил в наблюдение: {clean_title}\n"
@@ -214,7 +215,7 @@ def create_router(
             if existing:
                 await message.answer(f"Новых сделок не создано, но в базе уже есть подходящие сделки: {len(existing)}")
                 for row in existing:
-                    await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
+                    await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
                 return
             await message.answer(
                 f"Проверил: {clean_title}\n"
@@ -222,7 +223,7 @@ def create_router(
             )
             return
         for row in rows[:5]:
-            await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
+            await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
 
     @router.message(Command("pause"))
     async def pause(message: Message) -> None:
@@ -284,7 +285,7 @@ def create_router(
             if not rows:
                 await callback.message.answer("Новых сделок не найдено.")
             for row in rows[:5]:
-                await callback.message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
+                await callback.message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
 
     @router.callback_query(F.data == "refresh_inventory")
     async def refresh_inventory(callback: CallbackQuery) -> None:
@@ -304,6 +305,8 @@ def create_router(
     async def deal_hide(callback: CallbackQuery) -> None:
         deal = deals.mark_status(_callback_id(callback.data), "hidden")
         await callback.answer("Скрыто" if deal else "Не найдено")
+        if deal:
+            await _delete_callback_message(callback)
 
     @router.callback_query(F.data.startswith("deal_watch:"))
     async def deal_watch(callback: CallbackQuery) -> None:
@@ -356,6 +359,7 @@ def create_router(
     @router.callback_query(F.data == "real_cancel")
     async def real_cancel(callback: CallbackQuery) -> None:
         await callback.answer("Отменено")
+        await _delete_callback_message(callback)
 
     async def _buy_deal(callback: CallbackQuery, deal_id: int, confirmed_real: bool) -> None:
         try:
@@ -370,12 +374,8 @@ def create_router(
             if callback.message is not None:
                 await callback.message.answer(f"Не удалось отметить покупку: {exc}")
             return
-        await callback.answer("Готово")
-        if callback.message is not None:
-            await callback.message.answer(
-                f"Покупка отмечена.\n\n{format_inventory([item], 'Inventory')}",
-                reply_markup=inventory_keyboard(item.id),
-            )
+        await callback.answer("Покупка отмечена. Смотри /inventory")
+        await _delete_callback_message(callback)
 
     async def _sell_inventory(callback: CallbackQuery, inventory_id: int, confirmed_real: bool) -> None:
         try:
@@ -391,8 +391,7 @@ def create_router(
                 await callback.message.answer(f"Не удалось отметить продажу: {exc}")
             return
         await callback.answer("Продано")
-        if callback.message is not None:
-            await callback.message.answer(format_inventory([item], "Продано"))
+        await _delete_callback_message(callback)
 
     return router
 
@@ -410,3 +409,10 @@ def _command_argument(text: str | None) -> str:
 
 def _watched_titles(settings_repo: SettingsRepository) -> list[str]:
     return split_configured_titles(settings_repo.get("dmarket_watch_titles", ""))
+
+
+async def _delete_callback_message(callback: CallbackQuery) -> None:
+    if callback.message is None:
+        return
+    with suppress(Exception):
+        await callback.message.delete()
