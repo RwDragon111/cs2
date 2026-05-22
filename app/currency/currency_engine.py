@@ -3,16 +3,18 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.config import Settings
+from app.currency.rate_provider import CurrencyRateProvider
 from app.utils.money import percent_of, quantize_money, to_decimal
 
 
 class CurrencyEngine:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.rate_provider = CurrencyRateProvider(settings)
 
     @property
     def rub_usd_rate(self) -> Decimal:
-        return self.settings.manual_rub_usd_rate
+        return self.rate_provider.usd_to_rub_sync()
 
     def to_rub(self, amount: Decimal, currency: str, include_spread: bool = True) -> Decimal:
         currency = currency.upper()
@@ -44,4 +46,3 @@ class CurrencyEngine:
         if not conversion_required:
             return Decimal("0.00")
         return percent_of(amount_rub, self.settings.currency_spread_percent)
-

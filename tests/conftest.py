@@ -38,6 +38,7 @@ def settings(tmp_path) -> Settings:
         telegram_enabled=False,
         use_mock_markets=True,
         enable_dmarket_stats=False,
+        rub_usd_rate_source="manual",
         manual_rub_usd_rate=Decimal("100"),
         dmarket_extra_titles="",
         market_poll_interval_seconds=1,

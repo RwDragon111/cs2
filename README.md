@@ -403,6 +403,10 @@ DEFAULT_TRADING_MODE=DEMO
 ALLOW_REAL_TRADING=false
 DEMO_INITIAL_BALANCE=100000
 DEMO_CURRENCY=RUB
+RUB_USD_RATE_SOURCE=cbr
+CBR_DAILY_RATES_URL=https://www.cbr.ru/scripts/XML_daily.asp
+CURRENCY_RATE_CACHE_TTL_SECONDS=3600
+CURRENCY_RATE_FALLBACK_TO_MANUAL=true
 MANUAL_RUB_USD_RATE=70.8
 DMARKET_DYNAMIC_TITLE_LIMIT=160
 DMARKET_EXTRA_TITLES=
@@ -416,7 +420,7 @@ CSGO_MARKET_PRICE_HISTORY_ITEM_ENDPOINT=/api/v2/full-history/{item_id}.json
 DMARKET_EXTRA_TITLES=Kukri Knife | Blue Steel (Battle-Scarred)
 ```
 
-Для DMarket публичный API отдаёт цену в USD, поэтому `MANUAL_RUB_USD_RATE` должен примерно совпадать с курсом, который ты видишь на DMarket. Если курс стоит `100`, предмет за `$81.48` будет считаться как `8148 ₽` и такой оффер не пройдёт фильтр прибыли.
+Для DMarket публичный API отдаёт цену в USD. По умолчанию бот берёт курс USD/RUB из официального XML Банка России: `https://www.cbr.ru/scripts/XML_daily.asp`. Курс кешируется на `CURRENCY_RATE_CACHE_TTL_SECONDS`, чтобы не дергать ЦБР на каждый оффер. `MANUAL_RUB_USD_RATE` теперь используется только как fallback, если `CURRENCY_RATE_FALLBACK_TO_MANUAL=true` и ЦБР временно недоступен.
 
 ## 7. Безопасность
 

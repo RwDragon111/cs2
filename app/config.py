@@ -53,8 +53,11 @@ class Settings(BaseSettings):
 
     base_currency: str = "RUB"
     secondary_currency: str = "USD"
-    rub_usd_rate_source: str = "manual"
+    rub_usd_rate_source: Literal["manual", "cbr"] = "cbr"
     manual_rub_usd_rate: Decimal = Decimal("100")
+    cbr_daily_rates_url: str = "https://www.cbr.ru/scripts/XML_daily.asp"
+    currency_rate_cache_ttl_seconds: int = 3600
+    currency_rate_fallback_to_manual: bool = True
 
     min_profit_rub: Decimal = Decimal("100")
     min_profit_usd: Decimal = Decimal("1.00")
@@ -142,6 +145,11 @@ class Settings(BaseSettings):
     @classmethod
     def uppercase_currency(cls, value: str) -> str:
         return str(value).upper()
+
+    @field_validator("rub_usd_rate_source", mode="before")
+    @classmethod
+    def lowercase_rate_source(cls, value: str) -> str:
+        return str(value).lower()
 
     @field_validator("dmarket_stats_currency", mode="before")
     @classmethod

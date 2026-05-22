@@ -9,6 +9,7 @@ import httpx
 
 from app.config import Settings
 from app.core.exceptions import RealTradingDisabledError
+from app.currency.rate_provider import CurrencyRateProvider
 from app.markets.types import MarketBalance, MarketOffer
 from app.normalizer.item_normalizer import extract_exterior, normalize_item_name
 from app.utils.money import quantize_money, to_decimal
@@ -27,16 +28,20 @@ class DMarketClient:
 
     CSGO_GAME_ID = "a8db"
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, rate_provider: CurrencyRateProvider | None = None) -> None:
         self.settings = settings
         self.base_url = settings.dmarket_api_base_url.rstrip("/")
         self.api_key = settings.dmarket_public_or_api_key
         self.api_secret = settings.dmarket_secret_or_legacy_key
+        self.rate_provider = rate_provider or CurrencyRateProvider(settings)
+        self._rub_usd_rate = settings.manual_rub_usd_rate
 
     async def fetch_offers(self, titles: list[str] | None = None) -> list[MarketOffer]:
         if self.settings.use_mock_markets:
             return self._mock_offers()
 
+        self._rub_usd_rate = await self.rate_provider.usd_to_rub()
+        logger.info("DMarket USD prices will be converted with USD/RUB rate %s", self._rub_usd_rate)
         market_offers = await self._fetch_market_pages()
         if titles:
             targeted_offers = await self._fetch_offers_by_titles(titles)
@@ -169,7 +174,7 @@ class DMarketClient:
         price_usd = self._extract_usd_price(item)
         if price_usd <= 0:
             return None
-        price_rub = quantize_money(price_usd * self.settings.manual_rub_usd_rate)
+        price_rub = quantize_money(price_usd * self._rub_usd_rate)
         extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
         normalized = normalize_item_name(title)
         listing_id = str(item.get("itemId") or item.get("offerId") or item.get("assetId") or normalized)
@@ -206,9 +211,9 @@ class DMarketClient:
         return amount if "." in text else amount / Decimal("100")
 
     def _rub_to_usd_cents(self, value_rub: Decimal) -> int:
-        if self.settings.manual_rub_usd_rate <= 0:
+        if self._rub_usd_rate <= 0:
             return 0
-        usd = to_decimal(value_rub) / self.settings.manual_rub_usd_rate
+        usd = to_decimal(value_rub) / self._rub_usd_rate
         return max(0, int(usd * Decimal("100")))
 
     def _mock_offers(self) -> list[MarketOffer]:

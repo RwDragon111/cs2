@@ -176,6 +176,8 @@ def format_settings(settings: Settings, mode: str) -> str:
             f"MIN_LIQUIDITY_SCORE={settings.min_liquidity_score}",
             f"MAX_PRICE_SPIKE_PERCENT={settings.max_price_spike_percent}",
             f"SCAN_INTERVAL_SECONDS={settings.scan_interval_seconds}",
+            f"RUB_USD_RATE_SOURCE={settings.rub_usd_rate_source}",
+            f"MANUAL_RUB_USD_RATE={settings.manual_rub_usd_rate}",
             f"DMARKET_DYNAMIC_TITLE_LIMIT={settings.dmarket_dynamic_title_limit}",
             f"DMARKET_EXTRA_TITLES={len(settings.dmarket_extra_title_list)}",
             f"DMARKET_FEE_PERCENT={settings.dmarket_fee_percent}",
