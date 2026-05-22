@@ -171,10 +171,8 @@ class ArbitrageCalculator:
     def _dedupe_key(offer: MarketOffer, order: BuyOrder) -> str:
         raw = "|".join(
             [
+                "dmarket_to_csgo_buy_order",
                 offer.market_hash_name,
-                offer.listing_id,
-                str(offer.price_rub),
-                str(order.price_rub),
             ]
         )
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()

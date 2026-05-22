@@ -377,10 +377,10 @@ class DealRepository:
 
     def latest(self, limit: int = 10, include_hidden: bool = False) -> list[DealORM]:
         with self.session_factory() as session:
-            stmt = select(DealORM).order_by(DealORM.updated_at.desc(), DealORM.created_at.desc()).limit(limit)
+            stmt = select(DealORM).order_by(DealORM.updated_at.desc(), DealORM.created_at.desc()).limit(max(limit * 5, limit))
             if not include_hidden:
                 stmt = stmt.where(DealORM.status != "hidden")
-            return list(session.scalars(stmt).all())
+            return self._unique_by_item(list(session.scalars(stmt).all()))[:limit]
 
     def best(self, limit: int = 10) -> list[DealORM]:
         with self.session_factory() as session:
@@ -388,19 +388,19 @@ class DealRepository:
                 select(DealORM)
                 .where(DealORM.status != "hidden")
                 .order_by(DealORM.roi.desc(), DealORM.profit.desc())
-                .limit(limit)
+                .limit(max(limit * 5, limit))
             )
-            return list(session.scalars(stmt).all())
+            return self._unique_by_item(list(session.scalars(stmt).all()))[:limit]
 
     def search(self, query: str, limit: int = 10, include_hidden: bool = False) -> list[DealORM]:
         terms = [term for term in re.split(r"[^0-9A-Za-zА-Яа-я™★-]+", query) if len(term) > 1]
         with self.session_factory() as session:
-            stmt = select(DealORM).order_by(DealORM.updated_at.desc(), DealORM.created_at.desc()).limit(limit)
+            stmt = select(DealORM).order_by(DealORM.updated_at.desc(), DealORM.created_at.desc()).limit(max(limit * 5, limit))
             if not include_hidden:
                 stmt = stmt.where(DealORM.status != "hidden")
             for term in terms[:8]:
                 stmt = stmt.where(DealORM.item_name.ilike(f"%{term}%"))
-            return list(session.scalars(stmt).all())
+            return self._unique_by_item(list(session.scalars(stmt).all()))[:limit]
 
     def mark_status(self, deal_id: int, status: str) -> DealORM | None:
         with self.session_factory() as session:
@@ -411,6 +411,34 @@ class DealRepository:
             session.commit()
             session.refresh(row)
             return row
+
+    def hide_open_duplicates_for_item(self, market_hash_name: str, keep_id: int) -> int:
+        with self.session_factory() as session:
+            rows = list(
+                session.scalars(
+                    select(DealORM).where(
+                        DealORM.market_hash_name == market_hash_name,
+                        DealORM.id != keep_id,
+                        DealORM.status.in_(["new", "watching"]),
+                    )
+                )
+            )
+            for row in rows:
+                row.status = "hidden"
+            session.commit()
+            return len(rows)
+
+    @staticmethod
+    def _unique_by_item(rows: list[DealORM]) -> list[DealORM]:
+        unique: list[DealORM] = []
+        seen: set[str] = set()
+        for row in rows:
+            key = row.market_hash_name.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(row)
+        return unique
 
     def count_recent(self, minutes: int = 60) -> int:
         since = utc_now() - timedelta(minutes=minutes)

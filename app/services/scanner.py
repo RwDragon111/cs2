@@ -12,7 +12,7 @@ from app.db.models import DealORM
 from app.db.repositories import DealRepository, IgnoredItemRepository, ScanLogRepository, SettingsRepository, TradingStateRepository
 from app.markets.csgo_market_client import CSGOMarketClient
 from app.markets.dmarket_client import DMarketClient
-from app.markets.types import BuyOrder
+from app.markets.types import BuyOrder, MarketOffer
 from app.services.arbitrage import ArbitrageCalculator
 from app.services.liquidity import LiquidityScorer
 from app.services.price_analysis import PriceAnalyzer
@@ -124,7 +124,9 @@ class ArbitrageScanner:
             matching_offers = 0
             price_filtered_offers = 0
             profit_filtered_offers = 0
+            duplicate_offer_candidates = 0
             liquidity_filtered_offers = 0
+            selected_offers: dict[str, tuple[MarketOffer, BuyOrder]] = {}
             for offer in offers:
                 if offer.market_hash_name.lower() in ignored or offer.item_name.lower() in ignored:
                     continue
@@ -139,6 +141,16 @@ class ArbitrageScanner:
                     profit_filtered_offers += 1
                     continue
 
+                item_key = self._item_key(offer.market_hash_name)
+                selected = selected_offers.get(item_key)
+                if selected is not None:
+                    duplicate_offer_candidates += 1
+                    if self._is_better_offer(offer, selected[0]):
+                        selected_offers[item_key] = (offer, order)
+                    continue
+                selected_offers[item_key] = (offer, order)
+
+            for offer, order in selected_offers.values():
                 history = await self.csgo_market.fetch_price_history(offer.market_hash_name, order.price_rub)
                 history.buy_order_count = max(history.buy_order_count, order.count)
                 liquidity = self.liquidity.score(order, history)
@@ -155,15 +167,19 @@ class ArbitrageScanner:
                 if candidate is None:
                     continue
                 row, created = self.deals.upsert(candidate.to_orm_payload())
+                self.deals.hide_open_duplicates_for_item(row.market_hash_name, keep_id=row.id)
                 if created or include_existing:
                     found.append(row)
             logger.info(
                 "Scan checked %s CSGO buy orders, selected %s DMarket titles, got %s DMarket offers, "
-                "matched %s offers, price-filtered %s, profit-filtered %s, liquidity-filtered %s, found %s new deals",
+                "matched %s offers, deduped to %s unique items, suppressed %s duplicate offers, "
+                "price-filtered %s, profit-filtered %s, liquidity-filtered %s, found %s new deals",
                 len(buy_orders),
                 len(targeted_titles),
                 len(offers),
                 matching_offers,
+                len(selected_offers),
+                duplicate_offer_candidates,
                 price_filtered_offers,
                 profit_filtered_offers,
                 liquidity_filtered_offers,
@@ -202,6 +218,16 @@ class ArbitrageScanner:
             if current is None or Decimal(order.price_rub) > Decimal(current.price_rub):
                 best[order.market_hash_name] = order
         return best
+
+    @staticmethod
+    def _item_key(market_hash_name: str) -> str:
+        return market_hash_name.strip().lower()
+
+    @staticmethod
+    def _is_better_offer(candidate: MarketOffer, current: MarketOffer) -> bool:
+        if Decimal(candidate.price_rub) != Decimal(current.price_rub):
+            return Decimal(candidate.price_rub) < Decimal(current.price_rub)
+        return candidate.listing_id < current.listing_id
 
     def _select_dmarket_titles(self, orders: list[BuyOrder], extra_titles: list[str] | None = None) -> list[str]:
         candidates: list[tuple[Decimal, Decimal, int, str]] = []
