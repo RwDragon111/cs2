@@ -25,6 +25,7 @@ from app.logging_config import setup_logging
 from app.markets.csgo_market_client import CSGOMarketClient
 from app.markets.dmarket_client import DMarketClient
 from app.services.inventory import InventoryService
+from app.services.runtime_settings import apply_runtime_settings
 from app.services.scanner import ArbitrageScanner
 
 
@@ -39,6 +40,7 @@ async def async_main() -> None:
     ignored_items = IgnoredItemRepository(session_factory)
     scan_logs = ScanLogRepository(session_factory)
     settings_repo = SettingsRepository(session_factory)
+    apply_runtime_settings(settings, settings_repo)
     trading = TradingStateRepository(session_factory)
     trading.initialize(settings.default_trading_mode, settings.demo_initial_balance, settings.demo_currency)
 

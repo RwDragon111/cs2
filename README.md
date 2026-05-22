@@ -368,6 +368,11 @@ sudo journalctl -u cs2-arbitrage-bot -f
 - `/locked` - предметы в trade lock.
 - `/ready` - предметы, готовые к продаже.
 - `/settings` - текущие фильтры и комиссии.
+- `/settings_help` - список фильтров, которые можно менять из Telegram.
+- `/set MIN_PROFIT_PERCENT 2` - изменить настройку без ручного редактирования `.env`; значение сохраняется в базе.
+- `/rescan` - пересканировать рынок и снова показать подходящие сделки, включая уже найденные ранее.
+- `/deal 123` - открыть карточку сделки с кнопками.
+- `/rate` - показать текущий курс USD/RUB от ЦБР.
 - `/watch <название или URL>` - добавить предмет в точный DMarket-поиск. Можно вставить ссылку DMarket или CSGO Market.
 - `/watchlist` - показать предметы, которые всегда проверяются точечным поиском.
 - `/scan_item <название или URL>` - сразу проверить конкретный предмет без ожидания общего сканирования.
@@ -406,8 +411,7 @@ DEMO_CURRENCY=RUB
 RUB_USD_RATE_SOURCE=cbr
 CBR_DAILY_RATES_URL=https://www.cbr.ru/scripts/XML_daily.asp
 CURRENCY_RATE_CACHE_TTL_SECONDS=3600
-CURRENCY_RATE_FALLBACK_TO_MANUAL=true
-MANUAL_RUB_USD_RATE=70.8
+CURRENCY_RATE_FALLBACK_TO_MANUAL=false
 DMARKET_DYNAMIC_TITLE_LIMIT=160
 DMARKET_EXTRA_TITLES=
 CSGO_MARKET_PRICE_HISTORY_INDEX_ENDPOINT=/api/v2/full-history/all.json
@@ -420,7 +424,7 @@ CSGO_MARKET_PRICE_HISTORY_ITEM_ENDPOINT=/api/v2/full-history/{item_id}.json
 DMARKET_EXTRA_TITLES=Kukri Knife | Blue Steel (Battle-Scarred)
 ```
 
-Для DMarket публичный API отдаёт цену в USD. По умолчанию бот берёт курс USD/RUB из официального XML Банка России: `https://www.cbr.ru/scripts/XML_daily.asp`. Курс кешируется на `CURRENCY_RATE_CACHE_TTL_SECONDS`, чтобы не дергать ЦБР на каждый оффер. `MANUAL_RUB_USD_RATE` теперь используется только как fallback, если `CURRENCY_RATE_FALLBACK_TO_MANUAL=true` и ЦБР временно недоступен.
+Для DMarket публичный API отдаёт цену в USD. По умолчанию бот берёт курс USD/RUB из официального XML Банка России: `https://www.cbr.ru/scripts/XML_daily.asp`. Курс кешируется на `CURRENCY_RATE_CACHE_TTL_SECONDS`, чтобы не дергать ЦБР на каждый оффер. В стандартной конфигурации ручной курс не используется.
 
 ## 7. Безопасность
 

@@ -83,11 +83,22 @@ def format_deal_details(deal: DealORM, mode: str) -> str:
 def format_deals_list(deals: list[DealORM], mode: str, title: str = "Найденные сделки") -> str:
     if not deals:
         return "Подходящих сделок пока нет."
-    lines = [title, "", f"Режим: {mode_label(mode)}"]
-    for deal in deals:
-        lines.append(
-            f"#{deal.id} | {deal.item_name} | profit {format_rub(deal.profit)} | ROI {format_percent(deal.roi)} | LQ {deal.liquidity_score}/100"
+    lines = [title, "", f"Режим: {mode_label(mode)}", f"Всего в списке: {len(deals)}", ""]
+    for index, deal in enumerate(deals, start=1):
+        lines.extend(
+            [
+                f"{index}. {deal.item_name}",
+                f"ID: {deal.id}",
+                f"DMarket: {format_rub(deal.dmarket_price)}",
+                f"CSGO buy order: {format_rub(deal.csgo_buy_order_price)}",
+                f"Прибыль: {format_rub(deal.profit)} | ROI: {format_percent(deal.roi)}",
+                f"Ликвидность: {deal.liquidity_score}/100 | Риск: {deal.risk_score}/100",
+                f"Карточка с кнопками: /deal {deal.id}",
+                "------------------------------",
+            ]
         )
+    if lines[-1] == "------------------------------":
+        lines.pop()
     return "\n".join(lines)
 
 
@@ -149,17 +160,28 @@ def format_real_balance(dmarket: MarketBalance, csgo: MarketBalance, active_item
 def format_inventory(items: list[InventoryORM], title: str = "Inventory") -> str:
     if not items:
         return f"{title}\n\nПусто."
-    lines = [title, ""]
+    lines = [title, "", f"Всего в списке: {len(items)}", ""]
     now = utc_now()
-    for item in items:
+    for index, item in enumerate(items, start=1):
         trade_lock_until = ensure_aware(item.trade_lock_until)
         left = trade_lock_until - now
         left_days = max(0, left.days)
         lock_text = "готов к продаже" if trade_lock_until <= now else f"осталось {left_days} дн."
         tag = "DEMO" if item.is_demo else "REAL"
-        lines.append(
-            f"#{item.id} | {tag} | {item.status} | {item.item_name} | buy {format_rub(item.buy_price)} | sell {format_rub(item.expected_sell_price)} | {lock_text}"
+        lines.extend(
+            [
+                f"{index}. {item.item_name}",
+                f"ID: {item.id} | Режим: {tag} | Статус: {item.status}",
+                f"Покупка: {format_rub(item.buy_price)}",
+                f"Ожидаемая продажа: {format_rub(item.expected_sell_price)}",
+                f"Ожидаемая прибыль: {format_rub(item.expected_profit or 0)} | ROI: {format_percent(item.expected_roi or 0)}",
+                f"Trade lock: {lock_text}",
+                f"Куплен: {_fmt_dt(ensure_aware(item.bought_at))}",
+                "------------------------------",
+            ]
         )
+    if lines[-1] == "------------------------------":
+        lines.pop()
     return "\n".join(lines)
 
 
@@ -175,14 +197,20 @@ def format_settings(settings: Settings, mode: str) -> str:
             f"MAX_ITEM_PRICE={settings.max_item_price}",
             f"MIN_LIQUIDITY_SCORE={settings.min_liquidity_score}",
             f"MAX_PRICE_SPIKE_PERCENT={settings.max_price_spike_percent}",
+            f"PRICE_HISTORY_DAYS={settings.price_history_days}",
             f"SCAN_INTERVAL_SECONDS={settings.scan_interval_seconds}",
             f"RUB_USD_RATE_SOURCE={settings.rub_usd_rate_source}",
-            f"MANUAL_RUB_USD_RATE={settings.manual_rub_usd_rate}",
             f"DMARKET_DYNAMIC_TITLE_LIMIT={settings.dmarket_dynamic_title_limit}",
             f"DMARKET_EXTRA_TITLES={len(settings.dmarket_extra_title_list)}",
             f"DMARKET_FEE_PERCENT={settings.dmarket_fee_percent}",
             f"CSGO_MARKET_FEE_PERCENT={settings.csgo_market_fee_percent}",
+            f"WITHDRAWAL_FEE_PERCENT={settings.withdrawal_fee_percent}",
             f"ALLOW_REAL_TRADING={settings.allow_real_trading}",
+            "",
+            "Изменить настройку: /set MIN_PROFIT_PERCENT 2",
+            "Список изменяемых настроек: /settings_help",
+            "Пересканировать заново: /rescan",
+            "Проверить курс: /rate",
         ]
     )
 
@@ -200,6 +228,11 @@ def format_help() -> str:
             "/locked - предметы в trade lock",
             "/ready - готовые к продаже",
             "/settings - текущие фильтры",
+            "/settings_help - список настроек, которые можно менять из бота",
+            "/set MIN_PROFIT_PERCENT 2 - изменить настройку",
+            "/rescan - пересканировать рынок и показать подходящие сделки заново",
+            "/deal 123 - открыть карточку сделки с кнопками",
+            "/rate - текущий курс USD/RUB от ЦБР",
             "/watch <название или URL> - добавить item в точный DMarket-поиск",
             "/watchlist - список предметов в точном DMarket-поиске",
             "/scan_item <название или URL> - проверить item сразу",

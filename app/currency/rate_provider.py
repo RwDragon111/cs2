@@ -9,10 +9,11 @@ from decimal import Decimal
 import httpx
 
 from app.config import Settings
-from app.utils.money import quantize_money, to_decimal
+from app.utils.money import to_decimal
 from app.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
+RATE_QUANT = Decimal("0.0001")
 
 
 @dataclass(slots=True)
@@ -94,7 +95,7 @@ class CurrencyRateProvider:
 
     def _cache_manual(self, source: str = "manual") -> ExchangeRate:
         rate = ExchangeRate(
-            value=quantize_money(self.settings.manual_rub_usd_rate),
+            value=_quantize_rate(self.settings.manual_rub_usd_rate),
             source=source,
             fetched_at=utc_now(),
         )
@@ -119,9 +120,13 @@ class CurrencyRateProvider:
             if nominal <= 0 or value <= 0:
                 raise ValueError("CBR USD rate has invalid nominal/value")
             return ExchangeRate(
-                value=quantize_money(value / nominal),
+                value=_quantize_rate(value / nominal),
                 source="cbr",
                 effective_date=effective_date,
                 fetched_at=utc_now(),
             )
         raise ValueError("CBR XML_daily response does not contain USD rate")
+
+
+def _quantize_rate(value: Decimal) -> Decimal:
+    return to_decimal(value).quantize(RATE_QUANT)

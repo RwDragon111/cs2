@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     manual_rub_usd_rate: Decimal = Decimal("100")
     cbr_daily_rates_url: str = "https://www.cbr.ru/scripts/XML_daily.asp"
     currency_rate_cache_ttl_seconds: int = 3600
-    currency_rate_fallback_to_manual: bool = True
+    currency_rate_fallback_to_manual: bool = False
 
     min_profit_rub: Decimal = Decimal("100")
     min_profit_usd: Decimal = Decimal("1.00")

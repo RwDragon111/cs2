@@ -377,7 +377,7 @@ class DealRepository:
 
     def latest(self, limit: int = 10, include_hidden: bool = False) -> list[DealORM]:
         with self.session_factory() as session:
-            stmt = select(DealORM).order_by(DealORM.created_at.desc()).limit(limit)
+            stmt = select(DealORM).order_by(DealORM.updated_at.desc(), DealORM.created_at.desc()).limit(limit)
             if not include_hidden:
                 stmt = stmt.where(DealORM.status != "hidden")
             return list(session.scalars(stmt).all())
@@ -395,7 +395,7 @@ class DealRepository:
     def search(self, query: str, limit: int = 10, include_hidden: bool = False) -> list[DealORM]:
         terms = [term for term in re.split(r"[^0-9A-Za-zА-Яа-я™★-]+", query) if len(term) > 1]
         with self.session_factory() as session:
-            stmt = select(DealORM).order_by(DealORM.created_at.desc()).limit(limit)
+            stmt = select(DealORM).order_by(DealORM.updated_at.desc(), DealORM.created_at.desc()).limit(limit)
             if not include_hidden:
                 stmt = stmt.where(DealORM.status != "hidden")
             for term in terms[:8]:
@@ -493,6 +493,13 @@ class SettingsRepository:
             else:
                 row.value = value
             session.commit()
+
+    def delete(self, key: str) -> None:
+        with self.session_factory() as session:
+            row = session.get(SettingORM, key)
+            if row is not None:
+                session.delete(row)
+                session.commit()
 
 
 class IgnoredItemRepository:

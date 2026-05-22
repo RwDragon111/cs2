@@ -25,10 +25,12 @@ from app.bot.messages import (
 )
 from app.config import Settings
 from app.core.exceptions import RealTradingDisabledError
+from app.currency.rate_provider import CurrencyRateProvider
 from app.db.repositories import DealRepository, InventoryRepository, ScanLogRepository, SettingsRepository, TradingStateRepository
 from app.markets.csgo_market_client import CSGOMarketClient
 from app.markets.dmarket_client import DMarketClient
 from app.services.inventory import InventoryService
+from app.services.runtime_settings import format_editable_settings_help, set_runtime_setting
 from app.services.scanner import ArbitrageScanner
 from app.utils.item_titles import extract_title_from_text, join_configured_titles, split_configured_titles
 
@@ -63,6 +65,11 @@ def build_bot_commands():
         ("locked", "Trade lock"),
         ("ready", "Готово к продаже"),
         ("settings", "Фильтры"),
+        ("settings_help", "Изменяемые настройки"),
+        ("set", "Изменить настройку"),
+        ("rescan", "Пересканировать рынок"),
+        ("deal", "Карточка сделки"),
+        ("rate", "Курс USD/RUB ЦБР"),
         ("watch", "Точный DMarket-поиск"),
         ("watchlist", "Список точного поиска"),
         ("scan_item", "Проверить item/URL"),
@@ -96,6 +103,9 @@ def create_router(
     router.message.middleware(TelegramAuthMiddleware(settings.authorized_telegram_id))
     router.callback_query.middleware(TelegramAuthMiddleware(settings.authorized_telegram_id))
 
+    async def send_deal_list(message: Message, rows, title: str = "Найденные сделки") -> None:
+        await message.answer(format_deals_list(rows, trading.get_mode(), title=title), reply_markup=refresh_keyboard("deals"))
+
     @router.message(Command("start"))
     async def start(message: Message) -> None:
         mode = trading.get_mode()
@@ -126,18 +136,41 @@ def create_router(
 
     @router.message(Command("deals"))
     async def deal_list(message: Message) -> None:
-        mode = trading.get_mode()
-        rows = deals.latest(limit=5)
+        rows = deals.latest(limit=12)
         if not rows:
             await message.answer("Подходящих сделок пока нет.", reply_markup=refresh_keyboard("deals"))
             return
-        await message.answer(format_deals_list(rows, mode))
-        for row in rows:
-            await message.answer(format_deal(row, mode), reply_markup=deal_keyboard(row.id, row.item_name))
+        await send_deal_list(message, rows)
 
     @router.message(Command("best"))
     async def best(message: Message) -> None:
-        await message.answer(format_deals_list(deals.best(limit=10), trading.get_mode(), title="Топ сделок"))
+        await send_deal_list(message, deals.best(limit=12), title="Топ сделок")
+
+    @router.message(Command("deal"))
+    async def deal_card(message: Message) -> None:
+        raw_id = _command_argument(message.text)
+        if not raw_id:
+            await message.answer("Использование: /deal 123")
+            return
+        try:
+            deal_id = int(raw_id)
+        except ValueError:
+            await message.answer("ID сделки должен быть числом. Пример: /deal 123")
+            return
+        row = deals.get(deal_id)
+        if row is None:
+            await message.answer("Сделка не найдена.")
+            return
+        await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
+
+    @router.message(Command("rescan"))
+    async def rescan(message: Message) -> None:
+        await message.answer("Запускаю перескан. Старые подходящие сделки тоже попадут в результат, если снова проходят фильтры.")
+        rows = await scanner.scan_once(notify=False, include_existing=True)
+        if not rows:
+            await message.answer("Подходящих сделок по текущим фильтрам не найдено.", reply_markup=refresh_keyboard("deals"))
+            return
+        await send_deal_list(message, rows[:12], title="Результат перескана")
 
     @router.message(Command("inventory"))
     async def inventory_command(message: Message) -> None:
@@ -162,6 +195,45 @@ def create_router(
     async def settings_command(message: Message) -> None:
         await message.answer(format_settings(settings, trading.get_mode()))
 
+    @router.message(Command("settings_help"))
+    async def settings_help(message: Message) -> None:
+        await message.answer(format_editable_settings_help())
+
+    @router.message(Command("set"))
+    async def set_setting(message: Message) -> None:
+        parts = (message.text or "").split(maxsplit=2)
+        if len(parts) != 3:
+            await message.answer("Использование: /set MIN_PROFIT_PERCENT 2\nСписок настроек: /settings_help")
+            return
+        try:
+            spec, value = set_runtime_setting(settings, settings_repo, parts[1], parts[2])
+        except ValueError as exc:
+            await message.answer(f"Не удалось изменить настройку: {exc}\nСписок настроек: /settings_help")
+            return
+        await message.answer(
+            f"Настройка сохранена: {spec.key}={value}\n"
+            "Она уже применяется в текущем процессе. Чтобы заново показать подходящие старые и новые сделки, нажми /rescan."
+        )
+
+    @router.message(Command("rate"))
+    async def rate(message: Message) -> None:
+        try:
+            exchange_rate = await CurrencyRateProvider(settings).get_usd_to_rub()
+        except Exception as exc:
+            await message.answer(f"Не удалось получить курс ЦБР: {exc}")
+            return
+        lines = [
+            "Курс USD/RUB",
+            "",
+            f"Источник: {exchange_rate.source}",
+            f"Курс: {exchange_rate.value} ₽ за 1 USD",
+            f"Дата курса: {exchange_rate.effective_date or 'не указана'}",
+            f"Кеш: {settings.currency_rate_cache_ttl_seconds} сек.",
+        ]
+        if settings.currency_rate_fallback_to_manual:
+            lines.extend(["", "Внимание: включен fallback на manual rate, если ЦБР недоступен."])
+        await message.answer("\n".join(lines))
+
     @router.message(Command("watch"))
     async def watch_command(message: Message) -> None:
         title = _command_argument(message.text)
@@ -174,17 +246,15 @@ def create_router(
         clean_title = extract_title_from_text(title)
         current_titles = _watched_titles(settings_repo)
         settings_repo.set("dmarket_watch_titles", join_configured_titles([*current_titles, clean_title]))
-        rows = await scanner.scan_once(notify=False, extra_titles=[clean_title])
+        rows = await scanner.scan_once(notify=False, extra_titles=[clean_title], include_existing=True)
         if rows:
-            await message.answer(f"Добавил в наблюдение и нашёл новых сделок: {len(rows)}")
-            for row in rows[:5]:
-                await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
+            await message.answer(f"Добавил в наблюдение и нашёл подходящих сделок: {len(rows)}")
+            await send_deal_list(message, rows[:12], title=f"Сделки по {clean_title}")
             return
         existing = deals.search(clean_title, limit=5)
         if existing:
             await message.answer(f"Добавил в наблюдение. Уже найденные сделки по этому предмету: {len(existing)}")
-            for row in existing:
-                await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
+            await send_deal_list(message, existing, title=f"Сделки по {clean_title}")
             return
         await message.answer(
             f"Добавил в наблюдение: {clean_title}\n"
@@ -197,7 +267,8 @@ def create_router(
         if not titles:
             await message.answer("Список точного DMarket-поиска пуст. Добавь предмет командой /watch <название или URL>.")
             return
-        await message.answer("Точный DMarket-поиск:\n" + "\n".join(f"- {title}" for title in titles))
+        lines = ["Точный DMarket-поиск:", "", *[f"{index}. {title}" for index, title in enumerate(titles, start=1)]]
+        await message.answer("\n".join(lines))
 
     @router.message(Command("scan_item"))
     async def scan_item_command(message: Message) -> None:
@@ -209,21 +280,19 @@ def create_router(
             )
             return
         clean_title = extract_title_from_text(title)
-        rows = await scanner.scan_once(notify=False, extra_titles=[clean_title])
+        rows = await scanner.scan_once(notify=False, extra_titles=[clean_title], include_existing=True)
         if not rows:
             existing = deals.search(clean_title, limit=5)
             if existing:
                 await message.answer(f"Новых сделок не создано, но в базе уже есть подходящие сделки: {len(existing)}")
-                for row in existing:
-                    await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
+                await send_deal_list(message, existing, title=f"Сделки по {clean_title}")
                 return
             await message.answer(
                 f"Проверил: {clean_title}\n"
                 "Новых сделок не создано. Если предмет уже был найден раньше, посмотри /deals или /best."
             )
             return
-        for row in rows[:5]:
-            await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
+        await send_deal_list(message, rows[:12], title=f"Проверка {clean_title}")
 
     @router.message(Command("pause"))
     async def pause(message: Message) -> None:
@@ -280,12 +349,15 @@ def create_router(
     @router.callback_query(F.data == "refresh_deals")
     async def refresh_deals(callback: CallbackQuery) -> None:
         await callback.answer("Обновляю")
-        rows = await scanner.scan_once(notify=False)
+        rows = await scanner.scan_once(notify=False, include_existing=True)
         if callback.message is not None:
             if not rows:
-                await callback.message.answer("Новых сделок не найдено.")
-            for row in rows[:5]:
-                await callback.message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id, row.item_name))
+                await callback.message.answer("Подходящих сделок по текущим фильтрам не найдено.", reply_markup=refresh_keyboard("deals"))
+                return
+            await callback.message.answer(
+                format_deals_list(rows[:12], trading.get_mode(), title="Результат перескана"),
+                reply_markup=refresh_keyboard("deals"),
+            )
 
     @router.callback_query(F.data == "refresh_inventory")
     async def refresh_inventory(callback: CallbackQuery) -> None:

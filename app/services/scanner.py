@@ -95,11 +95,21 @@ class ArbitrageScanner:
     def resume(self) -> None:
         self.status.is_paused = False
 
-    async def scan_once(self, notify: bool = True, extra_titles: list[str] | None = None) -> list[DealORM]:
+    async def scan_once(
+        self,
+        notify: bool = True,
+        extra_titles: list[str] | None = None,
+        include_existing: bool = False,
+    ) -> list[DealORM]:
         async with self._scan_lock:
-            return await self._scan_once_locked(notify=notify, extra_titles=extra_titles)
+            return await self._scan_once_locked(notify=notify, extra_titles=extra_titles, include_existing=include_existing)
 
-    async def _scan_once_locked(self, notify: bool = True, extra_titles: list[str] | None = None) -> list[DealORM]:
+    async def _scan_once_locked(
+        self,
+        notify: bool = True,
+        extra_titles: list[str] | None = None,
+        include_existing: bool = False,
+    ) -> list[DealORM]:
         scan_log = self.scan_logs.start()
         self.status.last_scan_started_at = scan_log.started_at
         found: list[DealORM] = []
@@ -145,7 +155,7 @@ class ArbitrageScanner:
                 if candidate is None:
                     continue
                 row, created = self.deals.upsert(candidate.to_orm_payload())
-                if created:
+                if created or include_existing:
                     found.append(row)
             logger.info(
                 "Scan checked %s CSGO buy orders, selected %s DMarket titles, got %s DMarket offers, "

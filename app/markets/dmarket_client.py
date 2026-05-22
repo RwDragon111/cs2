@@ -34,7 +34,7 @@ class DMarketClient:
         self.api_key = settings.dmarket_public_or_api_key
         self.api_secret = settings.dmarket_secret_or_legacy_key
         self.rate_provider = rate_provider or CurrencyRateProvider(settings)
-        self._rub_usd_rate = settings.manual_rub_usd_rate
+        self._rub_usd_rate = Decimal("0")
 
     async def fetch_offers(self, titles: list[str] | None = None) -> list[MarketOffer]:
         if self.settings.use_mock_markets:

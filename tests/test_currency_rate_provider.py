@@ -26,7 +26,7 @@ def test_currency_rate_provider_parses_cbr_usd_rate(tmp_path):
 
     rate = provider._parse_cbr_xml(xml)
 
-    assert rate.value == Decimal("79.12")
+    assert rate.value == Decimal("79.1234")
     assert rate.source == "cbr"
     assert rate.effective_date == "22.05.2026"
 
