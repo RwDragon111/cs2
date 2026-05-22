@@ -18,8 +18,10 @@ class Settings(BaseSettings):
     authorized_telegram_id: int = 0
 
     use_mock_markets: bool = False
+    buy_market_source: Literal["DMARKET", "LIS_SKINS"] = "LIS_SKINS"
     market_csgo_api_key: str = ""
     csgo_market_api_key: str = ""
+    lis_skins_api_key: str = ""
     dmarket_api_key: str = ""
     dmarket_api_secret: str = ""
     dmarket_public_key: str = ""
@@ -51,8 +53,11 @@ class Settings(BaseSettings):
 
     base_currency: str = "RUB"
     secondary_currency: str = "USD"
-    rub_usd_rate_source: str = "manual"
+    rub_usd_rate_source: Literal["CBR", "MANUAL"] = "CBR"
     manual_rub_usd_rate: Decimal = Decimal("100")
+    cbr_daily_url: str = "https://www.cbr.ru/scripts/XML_daily.asp"
+    currency_rate_cache_seconds: int = 21600
+    currency_rate_fallback_to_manual: bool = True
 
     min_profit_rub: Decimal = Decimal("100")
     min_profit_usd: Decimal = Decimal("1.00")
@@ -74,6 +79,7 @@ class Settings(BaseSettings):
     price_history_days: int = 30
     trade_lock_days: int = 8
     dmarket_fee_percent: Decimal = Decimal("0")
+    lis_skins_fee_percent: Decimal = Decimal("0")
     csgo_market_fee_percent: Decimal = Decimal("5")
     withdrawal_fee_percent: Decimal = Decimal("0")
     demo_initial_balance: Decimal = Decimal("100000")
@@ -97,6 +103,11 @@ class Settings(BaseSettings):
     sales_history_interval_seconds: int = 900
 
     market_csgo_base_url: str = "https://market.csgo.com"
+    lis_skins_market_export_url: str = "https://lis-skins.com/market_export_json/csgo.json"
+    lis_skins_api_base_url: str = "https://api.lis-skins.com"
+    lis_skins_balance_endpoint: str = "/v1/user/balance"
+    lis_skins_only_unlocked: bool = True
+    lis_skins_min_count: int = 1
     dmarket_api_base_url: str = "https://api.dmarket.com"
     dmarket_items_endpoint: str = "/exchange/v1/market/items"
     csgo_market_buy_orders_endpoint: str = "/api/v2/prices/orders/RUB.json"
@@ -122,6 +133,7 @@ class Settings(BaseSettings):
     min_stats_spread_percent: Decimal = Decimal("8.0")
     min_stats_absolute_spread_rub: Decimal = Decimal("100")
     max_stats_signals_per_scan: int = 5
+    max_deals_per_scan: int = 5
     request_timeout_seconds: float = 20.0
     max_api_retries: int = 3
 
@@ -135,6 +147,11 @@ class Settings(BaseSettings):
     @field_validator("base_currency", "secondary_currency", mode="before")
     @classmethod
     def uppercase_currency(cls, value: str) -> str:
+        return str(value).upper()
+
+    @field_validator("buy_market_source", "rub_usd_rate_source", mode="before")
+    @classmethod
+    def uppercase_sources(cls, value: str) -> str:
         return str(value).upper()
 
     @field_validator("dmarket_stats_currency", mode="before")
@@ -191,6 +208,14 @@ class Settings(BaseSettings):
     @property
     def csgo_market_key(self) -> str:
         return self.csgo_market_api_key or self.market_csgo_api_key
+
+    @property
+    def buy_market_name(self) -> str:
+        return "LIS-SKINS" if self.buy_market_source == "LIS_SKINS" else "DMarket"
+
+    @property
+    def buy_market_fee_percent(self) -> Decimal:
+        return self.lis_skins_fee_percent if self.buy_market_source == "LIS_SKINS" else self.dmarket_fee_percent
 
 
 @lru_cache

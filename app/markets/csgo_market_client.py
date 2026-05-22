@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -108,6 +109,8 @@ class CSGOMarketClient:
         if price <= 0 or count <= 0:
             return None
         normalized = normalize_item_name(name)
+        raw_payload = dict(item)
+        raw_payload.setdefault("source_url", self.item_url(name))
         return BuyOrder(
             item_name=name,
             market_hash_name=normalized,
@@ -115,8 +118,12 @@ class CSGOMarketClient:
             currency="RUB",
             price_rub=price,
             count=count,
-            raw_payload=item,
+            raw_payload=raw_payload,
         )
+
+    @staticmethod
+    def item_url(market_hash_name: str) -> str:
+        return f"https://market.csgo.com/ru/?search={quote(market_hash_name)}"
 
     @staticmethod
     def _extract_price_rub(item: dict[str, Any]) -> Decimal:

@@ -45,4 +45,3 @@ def format_percent(value: Decimal | None) -> str:
     value = quantize_percent(to_decimal(value))
     sign = "+" if value > 0 else ""
     return f"{sign}{value}%"
-

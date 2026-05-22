@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from decimal import Decimal
 from typing import Any
 
@@ -26,9 +27,8 @@ from app.config import Settings
 from app.core.exceptions import RealTradingDisabledError
 from app.db.repositories import DealRepository, InventoryRepository, ScanLogRepository, TradingStateRepository
 from app.markets.csgo_market_client import CSGOMarketClient
-from app.markets.dmarket_client import DMarketClient
 from app.services.inventory import InventoryService
-from app.services.scanner import ArbitrageScanner
+from app.services.scanner import ArbitrageScanner, BuyMarketClient
 
 
 class TelegramAuthMiddleware(BaseMiddleware):
@@ -83,7 +83,7 @@ def create_router(
     trading: TradingStateRepository,
     scan_logs: ScanLogRepository,
     inventory_service: InventoryService,
-    dmarket: DMarketClient,
+    dmarket: BuyMarketClient,
     csgo_market: CSGOMarketClient,
 ) -> Router:
     router = Router()
@@ -95,9 +95,9 @@ def create_router(
         mode = trading.get_mode()
         await message.answer(
             "CS2 Arbitrage Bot запущен.\n\n"
-            "Маршрут анализа: купить на DMarket и продать в существующий buy order на CSGO Market.\n"
+            f"Маршрут анализа: купить на {settings.buy_market_name} и продать в существующий buy order на CSGO Market.\n"
             f"Текущий режим: {mode_label(mode)}\n\n"
-            "По умолчанию реальные операции не выполняются. Используй /help, чтобы открыть список команд.",
+            "Реальные операции отключены. Бот присылает сигналы и ссылки, покупку ты делаешь вручную.",
             reply_markup=refresh_keyboard("deals"),
         )
 
@@ -115,8 +115,8 @@ def create_router(
         if mode == "DEMO" or (message.text or "").startswith("/demo_balance"):
             await message.answer(format_demo_balance(trading.demo_account(), inventory.list(is_demo=True, limit=10000)))
             return
-        dmarket_balance, csgo_balance = await asyncio.gather(dmarket.get_balance(), csgo_market.get_balance())
-        await message.answer(format_real_balance(dmarket_balance, csgo_balance, inventory.list(is_demo=False, limit=10000)))
+        buy_market_balance, csgo_balance = await asyncio.gather(dmarket.get_balance(), csgo_market.get_balance())
+        await message.answer(format_real_balance(buy_market_balance, csgo_balance, inventory.list(is_demo=False, limit=10000)))
 
     @router.message(Command("deals"))
     async def deal_list(message: Message) -> None:
@@ -127,7 +127,7 @@ def create_router(
             return
         await message.answer(format_deals_list(rows, mode))
         for row in rows:
-            await message.answer(format_deal(row, mode), reply_markup=deal_keyboard(row.id))
+            await message.answer(format_deal(row, mode), reply_markup=deal_keyboard(row))
 
     @router.message(Command("best"))
     async def best(message: Message) -> None:
@@ -179,7 +179,8 @@ def create_router(
     async def demo_off(message: Message) -> None:
         if not settings.allow_real_trading:
             await message.answer(
-                "REAL-режим отключен в настройках сервера. Измени ALLOW_REAL_TRADING=true в .env, если хочешь разрешить реальные операции."
+                "REAL-режим отключен в настройках сервера. Измени ALLOW_REAL_TRADING=true в .env, "
+                "если хочешь разрешить реальные операции."
             )
             return
         trading.set_mode("REAL")
@@ -216,7 +217,7 @@ def create_router(
             if not rows:
                 await callback.message.answer("Новых сделок не найдено.")
             for row in rows[:5]:
-                await callback.message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row.id))
+                await callback.message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row))
 
     @router.callback_query(F.data == "refresh_inventory")
     async def refresh_inventory(callback: CallbackQuery) -> None:
@@ -236,6 +237,7 @@ def create_router(
     async def deal_hide(callback: CallbackQuery) -> None:
         deal = deals.mark_status(_callback_id(callback.data), "hidden")
         await callback.answer("Скрыто" if deal else "Не найдено")
+        await _delete_callback_message(callback)
 
     @router.callback_query(F.data.startswith("deal_watch:"))
     async def deal_watch(callback: CallbackQuery) -> None:
@@ -303,6 +305,7 @@ def create_router(
                 await callback.message.answer(f"Не удалось отметить покупку: {exc}")
             return
         await callback.answer("Готово")
+        await _delete_callback_message(callback)
         if callback.message is not None:
             await callback.message.answer(
                 f"Покупка отмечена.\n\n{format_inventory([item], 'Inventory')}",
@@ -327,6 +330,12 @@ def create_router(
             await callback.message.answer(format_inventory([item], "Продано"))
 
     return router
+
+
+async def _delete_callback_message(callback: CallbackQuery) -> None:
+    if callback.message is not None:
+        with suppress(Exception):
+            await callback.message.delete()
 
 
 def _callback_id(data: str | None) -> int:

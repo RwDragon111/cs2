@@ -1,91 +1,66 @@
-# CS2 DMarket -> CSGO Market Arbitrage Bot
+# CS2 LIS-SKINS -> CSGO Market Signal Bot
 
-Telegram-бот для анализа арбитража CS2-скинов: бот ищет предметы, которые можно купить на DMarket и потенциально продать в существующий buy order на CSGO Market с прибылью после комиссий.
+Telegram-бот для ручного поиска арбитражных сигналов по CS2-скинам.
 
-По умолчанию включен безопасный `DEMO` режим. Реальные покупки/продажи не выполняются автоматически.
+Текущая ветка ищет связки:
 
-## 1. Локальный запуск на компьютере
+1. Купить предмет на `LIS-SKINS`.
+2. Продать этот же предмет в уже существующий buy order на `CSGO Market`.
+3. Прислать в Telegram самый выгодный сигнал с расчетом прибыли, ROI и ссылками на обе площадки.
 
-### 1.1. Установи Python
+Автоматическая покупка отключена. В `REAL`-режиме бот тоже не покупает на LIS-SKINS через API: он только показывает предупреждение и ссылку, а покупку ты делаешь вручную.
+
+## Что изменено в этой версии
+
+- Источник покупки по умолчанию: `LIS-SKINS`.
+- Используется публичная выгрузка `https://lis-skins.com/market_export_json/csgo.json`.
+- API-ключ LIS-SKINS не нужен для сканирования. Он нужен только если потом захочешь получать баланс через API.
+- Цены LIS-SKINS в USD переводятся в рубли по курсу ЦБ РФ.
+- Сканер сортирует кандидатов по максимальной чистой прибыли и присылает только топ `MAX_DEALS_PER_SCAN`.
+- В Telegram-сообщении есть кнопки-ссылки на LIS-SKINS и CSGO Market.
+- После `Скрыть сделку` или `Отметить как куплено` сообщение с оффером удаляется из чата.
+
+## Локальный запуск на компьютере
 
 Нужен Python `3.11+`.
 
-Проверка:
-
-```bash
+```powershell
 python --version
 ```
 
-На Windows иногда команда называется:
+Установка на Windows:
 
 ```powershell
-py --version
-```
-
-### 1.2. Создай виртуальное окружение
-
-Windows PowerShell:
-
-```powershell
+cd "C:\Users\rwdra\Desktop\temka cs-lisskins"
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
-
-Linux / macOS:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 1.3. Создай `.env`
-
-Windows PowerShell:
-
-```powershell
 Copy-Item .env.example .env
 notepad .env
+python -m app.main
 ```
 
-Linux / macOS:
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-Минимально заполни:
+Минимально заполни в `.env`:
 
 ```env
-TELEGRAM_BOT_TOKEN=токен_бота_от_BotFather
+TELEGRAM_BOT_TOKEN=токен_от_BotFather
 AUTHORIZED_TELEGRAM_ID=твой_telegram_id
+BUY_MARKET_SOURCE=LIS_SKINS
 DEFAULT_TRADING_MODE=DEMO
 ALLOW_REAL_TRADING=false
 ```
 
-Для первого теста без реальных API включи mock-рынки:
+Для реального сканирования оставь:
+
+```env
+USE_MOCK_MARKETS=false
+```
+
+Для теста без реальных маркетов можно включить:
 
 ```env
 USE_MOCK_MARKETS=true
 SCAN_INTERVAL_SECONDS=60
-```
-
-Так бот будет создавать тестовые сделки без подключения к DMarket и CSGO Market.
-
-### 1.4. Запусти бота локально
-
-Windows PowerShell:
-
-```powershell
-python -m app.main
-```
-
-Linux / macOS:
-
-```bash
-python -m app.main
 ```
 
 После запуска открой Telegram и напиши боту:
@@ -94,203 +69,91 @@ python -m app.main
 /start
 /status
 /deals
-/balance
-/demo_stats
+/best
+/settings
 ```
 
-Если включен `USE_MOCK_MARKETS=true`, команда `/deals` должна показать тестовую сделку.
+## Основные настройки
 
-### 1.5. Остановить локально
+```env
+MIN_PROFIT_PERCENT=5
+MIN_PROFIT_ABSOLUTE=100
+MIN_ITEM_PRICE=300
+MAX_ITEM_PRICE=50000
+MAX_DEALS_PER_SCAN=5
+MIN_LIQUIDITY_SCORE=60
+SCAN_INTERVAL_SECONDS=300
 
-В терминале нажми:
+LIS_SKINS_FEE_PERCENT=0
+CSGO_MARKET_FEE_PERCENT=5
+WITHDRAWAL_FEE_PERCENT=0
 
-```text
-Ctrl+C
+RUB_USD_RATE_SOURCE=CBR
+CURRENCY_RATE_FALLBACK_TO_MANUAL=true
+MANUAL_RUB_USD_RATE=100
 ```
 
-## 2. Запуск на VPS через screen
+`MAX_ITEM_PRICE` отвечает за верхний лимит цены предмета. Например, если хочешь искать только до 15 000 ₽:
 
-Этот вариант удобен для простого запуска на удаленном сервере: бот продолжит работать после выхода из SSH.
+```env
+MAX_ITEM_PRICE=15000
+```
 
-Ниже пример для Ubuntu/Debian VPS.
+## Запуск на VPS через screen
 
-### 2.1. Подключись к серверу
+Пример для Ubuntu/Debian:
 
 ```bash
 ssh root@SERVER_IP
-```
-
-или под обычным пользователем:
-
-```bash
-ssh username@SERVER_IP
-```
-
-### 2.2. Установи зависимости сервера
-
-```bash
 sudo apt update
 sudo apt install -y python3 python3-venv python3-pip git screen
 ```
 
-Проверка:
+Клонирование именно этой версии:
 
 ```bash
-python3 --version
-screen --version
+git clone -b codex/lisskins-market-scanner https://github.com/RwDragon111/cs2.git cs2-lisskins
+cd cs2-lisskins
 ```
 
-### 2.3. Загрузи проект на сервер
-
-Если проект лежит в GitHub:
-
-```bash
-cd /opt
-sudo git clone REPO_URL cs2-arbitrage-bot
-sudo chown -R $USER:$USER /opt/cs2-arbitrage-bot
-cd /opt/cs2-arbitrage-bot
-```
-
-Если ты загружаешь папку вручную через SFTP, положи ее, например, сюда:
-
-```bash
-/opt/cs2-arbitrage-bot
-```
-
-и зайди в нее:
-
-```bash
-cd /opt/cs2-arbitrage-bot
-```
-
-### 2.4. Создай venv и установи зависимости
+Установка:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 2.5. Настрой `.env`
-
-```bash
 cp .env.example .env
 nano .env
+mkdir -p data logs
 ```
 
-Минимальные настройки:
-
-```env
-TELEGRAM_BOT_TOKEN=токен_бота_от_BotFather
-AUTHORIZED_TELEGRAM_ID=твой_telegram_id
-DEFAULT_TRADING_MODE=DEMO
-ALLOW_REAL_TRADING=false
-USE_MOCK_MARKETS=false
-```
-
-Для первого безопасного теста на VPS можно временно поставить:
-
-```env
-USE_MOCK_MARKETS=true
-SCAN_INTERVAL_SECONDS=60
-```
-
-Когда проверишь Telegram-бота, верни:
-
-```env
-USE_MOCK_MARKETS=false
-```
-
-и добавь API-ключи:
-
-```env
-DMARKET_API_KEY=
-DMARKET_API_SECRET=
-CSGO_MARKET_API_KEY=
-```
-
-### 2.6. Запусти бота в screen
-
-Создай screen-сессию:
+Запуск в `screen`:
 
 ```bash
-screen -S cs2bot
-```
-
-Внутри screen запусти:
-
-```bash
-cd /opt/cs2-arbitrage-bot
+screen -S cs2-lisskins
 source .venv/bin/activate
 python -m app.main
 ```
 
-Чтобы выйти из screen и оставить бота работать:
+Выйти из `screen`, не останавливая бота:
 
 ```text
-Ctrl+A
-D
+Ctrl+A, потом D
 ```
 
-То есть сначала нажми `Ctrl+A`, отпусти, потом нажми `D`.
-
-### 2.7. Вернуться к работающему боту
-
-Посмотреть screen-сессии:
+Вернуться в сессию:
 
 ```bash
-screen -ls
+screen -r cs2-lisskins
 ```
 
-Вернуться:
-
-```bash
-screen -r cs2bot
-```
-
-### 2.8. Остановить бота в screen
-
-Зайди обратно:
-
-```bash
-screen -r cs2bot
-```
-
-Останови процесс:
+Остановить бота внутри screen:
 
 ```text
 Ctrl+C
 ```
 
-Выйди из screen:
-
-```bash
-exit
-```
-
-Если нужно принудительно закрыть screen-сессию:
-
-```bash
-screen -S cs2bot -X quit
-```
-
-### 2.9. Логи
-
-Основной лог пишется сюда:
-
-```bash
-tail -f logs/app.log
-```
-
-Если бот запущен прямо в screen, текущий вывод также виден при:
-
-```bash
-screen -r cs2bot
-```
-
-## 3. Запуск на VPS через Docker
-
-Альтернатива `screen`, если хочешь запускать контейнером:
+## Docker
 
 ```bash
 cp .env.example .env
@@ -305,118 +168,17 @@ docker compose logs -f
 docker compose down
 ```
 
-Данные SQLite и логи сохраняются в:
+## Безопасность
 
-```text
-data/
-logs/
-```
+- Секреты хранятся только в `.env`.
+- Бот принимает команды только от `AUTHORIZED_TELEGRAM_ID`.
+- По умолчанию включен `DEMO`.
+- `ALLOW_REAL_TRADING=false` блокирует реальные действия.
+- В этой ветке LIS-SKINS покупка через API не реализована намеренно: бот присылает ссылку, а решение принимаешь вручную.
 
-## 4. Запуск через systemd
-
-Для постоянного production-запуска лучше `systemd`, потому что сервис сам поднимется после перезагрузки VPS.
-
-Файл:
+## Проверки
 
 ```bash
-sudo nano /etc/systemd/system/cs2-arbitrage-bot.service
-```
-
-Содержимое:
-
-```ini
-[Unit]
-Description=CS2 Arbitrage Telegram Bot
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/cs2-arbitrage-bot
-EnvironmentFile=/opt/cs2-arbitrage-bot/.env
-ExecStart=/opt/cs2-arbitrage-bot/.venv/bin/python -m app.main
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Запуск:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable cs2-arbitrage-bot
-sudo systemctl start cs2-arbitrage-bot
-sudo systemctl status cs2-arbitrage-bot
-```
-
-Логи:
-
-```bash
-sudo journalctl -u cs2-arbitrage-bot -f
-```
-
-## 5. Telegram-команды
-
-- `/start` - запуск и главное меню.
-- `/status` - статус сканера, последнее сканирование, ошибки, uptime.
-- `/balance` - баланс в текущем режиме.
-- `/deals` - найденные сделки.
-- `/best` - лучшие сделки по ROI и прибыли.
-- `/inventory` - купленные скины и текущие сделки.
-- `/locked` - предметы в trade lock.
-- `/ready` - предметы, готовые к продаже.
-- `/settings` - текущие фильтры и комиссии.
-- `/pause` - поставить сканер на паузу.
-- `/resume` - возобновить сканирование.
-- `/mode` - текущий режим `DEMO` или `REAL`.
-- `/demo_on` - включить DEMO.
-- `/demo_off` - включить REAL, если разрешено в `.env`.
-- `/demo_balance` - демо-баланс.
-- `/demo_set_balance 100000` - установить демо-баланс.
-- `/demo_reset` - сбросить демо-счет.
-- `/demo_stats` - статистика демо-торговли.
-- `/help` - справка.
-
-## 6. Важные настройки `.env`
-
-```env
-SCAN_INTERVAL_SECONDS=300
-MIN_PROFIT_PERCENT=5
-MIN_PROFIT_ABSOLUTE=100
-MIN_ITEM_PRICE=300
-MAX_ITEM_PRICE=50000
-MIN_LIQUIDITY_SCORE=60
-MAX_PRICE_SPIKE_PERCENT=25
-PRICE_HISTORY_DAYS=30
-DMARKET_FEE_PERCENT=0
-CSGO_MARKET_FEE_PERCENT=5
-WITHDRAWAL_FEE_PERCENT=0
-TRADE_LOCK_DAYS=8
-DEFAULT_TRADING_MODE=DEMO
-ALLOW_REAL_TRADING=false
-DEMO_INITIAL_BALANCE=100000
-DEMO_CURRENCY=RUB
-```
-
-## 7. Безопасность
-
-- Не вставляй токены и API-ключи в код.
-- Все секреты хранятся только в `.env`.
-- Доступ к боту разрешен только пользователю из `AUTHORIZED_TELEGRAM_ID`.
-- По умолчанию работает `DEMO`.
-- При `ALLOW_REAL_TRADING=false` REAL-режим не включится.
-- Реальные операции требуют ручного подтверждения в Telegram.
-
-## 8. Проверка тестами
-
-```bash
-pytest
-```
-
-Если на Windows pytest не может создать временную папку, запусти так:
-
-```bash
-pytest -q --basetemp .pytest_tmp
+python -m compileall app
+pytest -q
 ```

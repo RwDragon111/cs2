@@ -18,21 +18,24 @@ def mode_label(mode: str) -> str:
 
 def format_deal(deal: DealORM, mode: str) -> str:
     details = deal.details or {}
+    markets = details.get("markets", {})
     liquidity = details.get("liquidity", {})
     price = details.get("price_analysis", {})
     fees = details.get("fees", {})
     warning = price.get("warning")
+    buy_market = markets.get("buy_market") or "Buy market"
+
     lines = [
         "🔥 Найдена потенциальная сделка",
         "",
         f"Режим: {mode_label(mode)}",
         "",
         f"Скин: {deal.item_name}",
-        f"DMarket цена покупки: {format_rub(deal.dmarket_price)}",
+        f"{buy_market} цена покупки: {format_rub(deal.dmarket_price)}",
         f"CSGO Market buy order: {format_rub(deal.csgo_buy_order_price)}",
         "",
         "Комиссии:",
-        f"- покупка: {fees.get('buy_fee', '0')} ₽ / {fees.get('dmarket_fee_percent', '0')}%",
+        f"- покупка: {fees.get('buy_fee', '0')} ₽ / {fees.get('buy_market_fee_percent', fees.get('dmarket_fee_percent', '0'))}%",
         f"- продажа: {fees.get('csgo_market_fee_percent', '0')}%",
         f"- вывод: {fees.get('withdrawal_fee_percent', '0')}%",
         "",
@@ -59,17 +62,24 @@ def format_deal(deal: DealORM, mode: str) -> str:
 def format_deal_details(deal: DealORM, mode: str) -> str:
     details = deal.details or {}
     notes = details.get("liquidity", {}).get("notes", [])
+    links = details.get("links", {})
     lines = [
         format_deal(deal, mode),
         "",
         "Технические детали:",
         f"ID сделки: {deal.id}",
-        f"DMarket listing: {deal.dmarket_listing_id}",
-        f"Цена с комиссиями покупки: {format_rub(deal.buy_price_with_fees)}",
+        f"Buy listing: {deal.dmarket_listing_id}",
+        f"Цена с комиссией покупки: {format_rub(deal.buy_price_with_fees)}",
         f"Цена после комиссий продажи: {format_rub(deal.sell_price_after_fees)}",
         f"Risk score: {deal.risk_score}/100",
         f"Статус: {deal.status}",
     ]
+    if links.get("buy_market") or links.get("csgo_market"):
+        lines.extend(["", "Ссылки:"])
+        if links.get("buy_market"):
+            lines.append(f"Покупка: {links['buy_market']}")
+        if links.get("csgo_market"):
+            lines.append(f"Продажа: {links['csgo_market']}")
     if notes:
         lines.append("")
         lines.append("Заметки по ликвидности:")
@@ -80,12 +90,17 @@ def format_deal_details(deal: DealORM, mode: str) -> str:
 def format_deals_list(deals: list[DealORM], mode: str, title: str = "Найденные сделки") -> str:
     if not deals:
         return "Подходящих сделок пока нет."
-    lines = [title, "", f"Режим: {mode_label(mode)}"]
-    for deal in deals:
-        lines.append(
-            f"#{deal.id} | {deal.item_name} | profit {format_rub(deal.profit)} | ROI {format_percent(deal.roi)} | LQ {deal.liquidity_score}/100"
+    lines = [title, "", f"Режим: {mode_label(mode)}", ""]
+    for index, deal in enumerate(deals, start=1):
+        lines.extend(
+            [
+                f"{index}. #{deal.id} {deal.item_name}",
+                f"   Profit: {format_rub(deal.profit)} | ROI: {format_percent(deal.roi)} | LQ: {deal.liquidity_score}/100",
+                f"   Buy: {format_rub(deal.dmarket_price)} -> Sell order: {format_rub(deal.csgo_buy_order_price)}",
+                "",
+            ]
         )
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip()
 
 
 def format_status(status: ScannerStatus, latest_log: ScanLogORM | None) -> str:
@@ -127,14 +142,14 @@ def format_demo_balance(account: DemoAccountORM, inventory: list[InventoryORM]) 
     )
 
 
-def format_real_balance(dmarket: MarketBalance, csgo: MarketBalance, active_items: list[InventoryORM]) -> str:
+def format_real_balance(buy_market: MarketBalance, csgo: MarketBalance, active_items: list[InventoryORM]) -> str:
     active_value = sum((Decimal(item.buy_price) for item in active_items if item.status != "sold"), Decimal("0"))
     return "\n".join(
         [
             "Баланс",
             "",
             "Режим: REAL ⚠️",
-            f"DMarket: {format_rub(dmarket.available)}",
+            f"{buy_market.market_name}: {format_rub(buy_market.available)}",
             f"CSGO Market: {format_rub(csgo.available)}",
             f"Средства в активных сделках: {format_rub(active_value)}",
             "",
@@ -148,15 +163,20 @@ def format_inventory(items: list[InventoryORM], title: str = "Inventory") -> str
         return f"{title}\n\nПусто."
     lines = [title, ""]
     now = utc_now()
-    for item in items:
+    for index, item in enumerate(items, start=1):
         left = item.trade_lock_until - now
         left_days = max(0, left.days)
         lock_text = "готов к продаже" if item.trade_lock_until <= now else f"осталось {left_days} дн."
         tag = "DEMO" if item.is_demo else "REAL"
-        lines.append(
-            f"#{item.id} | {tag} | {item.status} | {item.item_name} | buy {format_rub(item.buy_price)} | sell {format_rub(item.expected_sell_price)} | {lock_text}"
+        lines.extend(
+            [
+                f"{index}. #{item.id} {item.item_name}",
+                f"   {tag} | {item.status} | {lock_text}",
+                f"   buy {format_rub(item.buy_price)} | expected sell {format_rub(item.expected_sell_price)}",
+                "",
+            ]
         )
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip()
 
 
 def format_settings(settings: Settings, mode: str) -> str:
@@ -165,15 +185,19 @@ def format_settings(settings: Settings, mode: str) -> str:
             "Настройки фильтров",
             "",
             f"Режим: {mode_label(mode)}",
+            f"BUY_MARKET_SOURCE={settings.buy_market_source}",
             f"MIN_PROFIT_ABSOLUTE={settings.min_profit_absolute}",
             f"MIN_PROFIT_PERCENT={settings.min_profit_percent}",
             f"MIN_ITEM_PRICE={settings.min_item_price}",
             f"MAX_ITEM_PRICE={settings.max_item_price}",
             f"MIN_LIQUIDITY_SCORE={settings.min_liquidity_score}",
             f"MAX_PRICE_SPIKE_PERCENT={settings.max_price_spike_percent}",
+            f"MAX_DEALS_PER_SCAN={settings.max_deals_per_scan}",
             f"SCAN_INTERVAL_SECONDS={settings.scan_interval_seconds}",
-            f"DMARKET_FEE_PERCENT={settings.dmarket_fee_percent}",
+            f"LIS_SKINS_FEE_PERCENT={settings.lis_skins_fee_percent}",
             f"CSGO_MARKET_FEE_PERCENT={settings.csgo_market_fee_percent}",
+            f"WITHDRAWAL_FEE_PERCENT={settings.withdrawal_fee_percent}",
+            f"RUB_USD_RATE_SOURCE={settings.rub_usd_rate_source}",
             f"ALLOW_REAL_TRADING={settings.allow_real_trading}",
         ]
     )
@@ -194,12 +218,12 @@ def format_help() -> str:
             "/settings - текущие фильтры",
             "/pause - остановить сканирование",
             "/resume - возобновить сканирование",
-            "/mode - текущий режим",
+            "/mode - текущий режим DEMO/REAL",
             "/demo_on - включить DEMO",
             "/demo_off - включить REAL, если разрешено",
             "/demo_balance - демо-баланс",
             "/demo_set_balance 100000 - установить демо-баланс",
-            "/demo_reset - сбросить демо-счет",
+            "/demo_reset - сбросить DEMO",
             "/demo_stats - статистика DEMO",
             "/help - эта справка",
         ]

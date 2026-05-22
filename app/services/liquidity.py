@@ -29,15 +29,18 @@ class LiquidityScorer:
         else:
             spread_percent = Decimal("100")
 
-        order_score = min(35, buy_order_count * 5)
-        sales_score = min(35, sales_7d * 2 + sales_30d // 10)
+        # When sale history is unavailable, Market.CSGO order depth becomes the
+        # main liquidity signal. A deep active buy side should still pass a
+        # MIN_LIQUIDITY_SCORE around 60.
+        order_score = min(45, buy_order_count * 5)
+        sales_score = min(30, sales_7d * 2 + sales_30d // 10)
         spread_score = max(0, 20 - int(spread_percent))
-        history_score = 10 if not history.is_fallback else 3
+        history_score = 5 if history.is_fallback else 10
         total = max(0, min(100, order_score + sales_score + spread_score + history_score))
 
         notes: list[str] = []
         if history.is_fallback:
-            notes.append("История цен недоступна, использован осторожный fallback.")
+            notes.append("История цен недоступна, ликвидность оценена по глубине buy orders и spread.")
         if buy_order_count < 3:
             notes.append("Мало buy orders, ликвидность может быть тонкой.")
         if spread_percent > 15:

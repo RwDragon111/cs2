@@ -6,14 +6,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from typing import Protocol
 
 from app.config import Settings
 from app.db.models import DealORM
 from app.db.repositories import DealRepository, IgnoredItemRepository, ScanLogRepository, TradingStateRepository
 from app.markets.csgo_market_client import CSGOMarketClient
-from app.markets.dmarket_client import DMarketClient
-from app.markets.types import BuyOrder
-from app.services.arbitrage import ArbitrageCalculator
+from app.markets.types import BuyOrder, MarketBalance, MarketOffer
+from app.services.arbitrage import ArbitrageCalculator, DealCandidate
 from app.services.liquidity import LiquidityScorer
 from app.services.price_analysis import PriceAnalyzer
 from app.utils.time import utc_now
@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 
 DealNotifier = Callable[[DealORM], Awaitable[None]]
 ErrorNotifier = Callable[[str], Awaitable[None]]
+
+
+class BuyMarketClient(Protocol):
+    async def fetch_offers(self) -> list[MarketOffer]:
+        ...
+
+    async def get_balance(self) -> MarketBalance:
+        ...
+
+    async def buy_item(self, listing_id: str) -> None:
+        ...
 
 
 @dataclass(slots=True)
@@ -41,7 +52,7 @@ class ArbitrageScanner:
     def __init__(
         self,
         settings: Settings,
-        dmarket: DMarketClient,
+        dmarket: BuyMarketClient,
         csgo_market: CSGOMarketClient,
         deals: DealRepository,
         ignored_items: IgnoredItemRepository,
@@ -108,6 +119,8 @@ class ArbitrageScanner:
             )
             ignored = self.ignored_items.names()
             best_orders = self._best_orders_by_name(buy_orders)
+            candidates_by_item: dict[str, DealCandidate] = {}
+
             for offer in offers:
                 if offer.market_hash_name.lower() in ignored or offer.item_name.lower() in ignored:
                     continue
@@ -130,6 +143,17 @@ class ArbitrageScanner:
                 )
                 if candidate is None:
                     continue
+                current = candidates_by_item.get(candidate.market_hash_name)
+                if current is None or self._is_better_candidate(candidate, current):
+                    candidates_by_item[candidate.market_hash_name] = candidate
+
+            candidates = sorted(
+                candidates_by_item.values(),
+                key=lambda item: (Decimal(item.profit), Decimal(item.roi)),
+                reverse=True,
+            )[: max(1, self.settings.max_deals_per_scan)]
+
+            for candidate in candidates:
                 row, created = self.deals.upsert(candidate.to_orm_payload())
                 if created:
                     found.append(row)
@@ -140,7 +164,7 @@ class ArbitrageScanner:
             self.status.last_error = error_message
             self.status.api_errors = [*self.status.api_errors[-9:], error_message]
             if self.on_critical_error is not None:
-                await self.on_critical_error(f"Критическая ошибка сканера: {error_message}")
+                await self.on_critical_error(f"Critical scanner error: {error_message}")
         finally:
             self.scan_logs.finish(scan_log.id, len(found), error_message)
             self.status.last_scan_finished_at = utc_now()
@@ -166,3 +190,11 @@ class ArbitrageScanner:
             if current is None or Decimal(order.price_rub) > Decimal(current.price_rub):
                 best[order.market_hash_name] = order
         return best
+
+    @staticmethod
+    def _is_better_candidate(candidate: DealCandidate, current: DealCandidate) -> bool:
+        if Decimal(candidate.profit) != Decimal(current.profit):
+            return Decimal(candidate.profit) > Decimal(current.profit)
+        if Decimal(candidate.roi) != Decimal(current.roi):
+            return Decimal(candidate.roi) > Decimal(current.roi)
+        return Decimal(candidate.dmarket_price) < Decimal(current.dmarket_price)

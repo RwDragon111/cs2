@@ -9,7 +9,7 @@ from app.core.exceptions import RealTradingDisabledError
 from app.db.models import DealORM, InventoryORM
 from app.db.repositories import DealRepository, InventoryRepository, TradingStateRepository
 from app.markets.csgo_market_client import CSGOMarketClient
-from app.markets.dmarket_client import DMarketClient
+from app.services.scanner import BuyMarketClient
 from app.utils.money import percent_of, quantize_money, quantize_percent
 from app.utils.time import utc_now
 
@@ -35,7 +35,7 @@ class InventoryService:
         deals: DealRepository,
         inventory: InventoryRepository,
         trading: TradingStateRepository,
-        dmarket: DMarketClient,
+        dmarket: BuyMarketClient,
         csgo_market: CSGOMarketClient,
     ) -> None:
         self.settings = settings

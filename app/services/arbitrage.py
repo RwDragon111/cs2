@@ -75,7 +75,9 @@ class ArbitrageCalculator:
         if liquidity.score < self.settings.min_liquidity_score:
             return None
 
-        buy_fee = percent_of(offer.price_rub, self.settings.dmarket_fee_percent)
+        buy_market = str(offer.raw_payload.get("buy_market") or self.settings.buy_market_name)
+        buy_fee_percent = self.settings.buy_market_fee_percent
+        buy_fee = percent_of(offer.price_rub, buy_fee_percent)
         buy_price_with_fees = quantize_money(offer.price_rub + buy_fee)
 
         sell_fee_percent = self.settings.csgo_market_fee_percent + self.settings.withdrawal_fee_percent
@@ -94,7 +96,7 @@ class ArbitrageCalculator:
 
         risk_score = self._risk_score(price_analysis)
         return DealCandidate(
-            dedupe_key=self._dedupe_key(offer, order),
+            dedupe_key=self._dedupe_key(offer),
             item_name=offer.item_name,
             market_hash_name=offer.market_hash_name,
             exterior=offer.exterior,
@@ -112,11 +114,21 @@ class ArbitrageCalculator:
             source_mode=source_mode,
             details={
                 "fees": {
+                    "buy_market_fee_percent": str(buy_fee_percent),
                     "dmarket_fee_percent": str(self.settings.dmarket_fee_percent),
+                    "lis_skins_fee_percent": str(self.settings.lis_skins_fee_percent),
                     "csgo_market_fee_percent": str(self.settings.csgo_market_fee_percent),
                     "withdrawal_fee_percent": str(self.settings.withdrawal_fee_percent),
                     "buy_fee": str(buy_fee),
                     "sell_fee": str(sell_fee),
+                },
+                "markets": {
+                    "buy_market": buy_market,
+                    "sell_market": "CSGO Market buy order",
+                },
+                "links": {
+                    "buy_market": offer.raw_payload.get("source_url") or offer.raw_payload.get("url"),
+                    "csgo_market": order.raw_payload.get("source_url") or order.raw_payload.get("url"),
                 },
                 "liquidity": {
                     "sales_7d": liquidity.sales_7d,
@@ -135,7 +147,7 @@ class ArbitrageCalculator:
                 },
                 "trade_lock_days": self.settings.trade_lock_days,
                 "raw": {
-                    "dmarket": offer.raw_payload,
+                    "buy_market": offer.raw_payload,
                     "csgo_market": order.raw_payload,
                 },
             },
@@ -152,13 +164,11 @@ class ArbitrageCalculator:
         return min(100, base)
 
     @staticmethod
-    def _dedupe_key(offer: MarketOffer, order: BuyOrder) -> str:
+    def _dedupe_key(offer: MarketOffer) -> str:
         raw = "|".join(
             [
+                str(offer.raw_payload.get("buy_market") or "buy_market"),
                 offer.market_hash_name,
-                offer.listing_id,
-                str(offer.price_rub),
-                str(order.price_rub),
             ]
         )
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()

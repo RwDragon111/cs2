@@ -23,6 +23,7 @@ from app.db.repositories import (
 from app.logging_config import setup_logging
 from app.markets.csgo_market_client import CSGOMarketClient
 from app.markets.dmarket_client import DMarketClient
+from app.markets.lis_skins_client import LisSkinsClient
 from app.services.inventory import InventoryService
 from app.services.scanner import ArbitrageScanner
 
@@ -40,7 +41,7 @@ async def async_main() -> None:
     trading = TradingStateRepository(session_factory)
     trading.initialize(settings.default_trading_mode, settings.demo_initial_balance, settings.demo_currency)
 
-    dmarket = DMarketClient(settings)
+    buy_market = LisSkinsClient(settings) if settings.buy_market_source == "LIS_SKINS" else DMarketClient(settings)
     csgo_market = CSGOMarketClient(settings)
     bot: Bot | None = Bot(settings.telegram_bot_token) if settings.telegram_ready else None
 
@@ -57,12 +58,12 @@ async def async_main() -> None:
         await bot.send_message(
             chat_id=settings.authorized_telegram_id,
             text=format_deal(deal, trading.get_mode()),
-            reply_markup=deal_keyboard(deal.id),
+            reply_markup=deal_keyboard(deal),
         )
 
     scanner = ArbitrageScanner(
         settings=settings,
-        dmarket=dmarket,
+        dmarket=buy_market,
         csgo_market=csgo_market,
         deals=deals,
         ignored_items=ignored_items,
@@ -76,7 +77,7 @@ async def async_main() -> None:
         deals=deals,
         inventory=inventory,
         trading=trading,
-        dmarket=dmarket,
+        dmarket=buy_market,
         csgo_market=csgo_market,
     )
 
@@ -93,7 +94,7 @@ async def async_main() -> None:
                 trading=trading,
                 scan_logs=scan_logs,
                 inventory_service=inventory_service,
-                dmarket=dmarket,
+                dmarket=buy_market,
                 csgo_market=csgo_market,
             )
         )
