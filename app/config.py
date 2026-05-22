@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_env: str = "production"
     database_url: str = "sqlite:///data/cs2_arbitrage.db"
+    runtime_settings_file: str = "data/settings.json"
 
     telegram_enabled: bool = True
     telegram_bot_token: str = ""

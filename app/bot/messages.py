@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 from app.config import Settings
 from app.db.models import DealORM, DemoAccountORM, InventoryORM, ScanLogORM
@@ -9,7 +10,7 @@ from app.markets.types import MarketBalance
 from app.services.inventory import DemoStats
 from app.services.scanner import ScannerStatus
 from app.utils.money import format_percent, format_rub
-from app.utils.time import utc_now
+from app.utils.time import ensure_aware, utc_now
 
 
 def mode_label(mode: str) -> str:
@@ -90,7 +91,7 @@ def format_deal_details(deal: DealORM, mode: str) -> str:
 def format_deals_list(deals: list[DealORM], mode: str, title: str = "Найденные сделки") -> str:
     if not deals:
         return "Подходящих сделок пока нет."
-    lines = [title, "", f"Режим: {mode_label(mode)}", ""]
+    lines = [title, "", f"Режим: {mode_label(mode)}", f"Всего в списке: {len(deals)}", ""]
     for index, deal in enumerate(deals, start=1):
         lines.extend(
             [
@@ -104,7 +105,7 @@ def format_deals_list(deals: list[DealORM], mode: str, title: str = "Найде�
 
 
 def format_status(status: ScannerStatus, latest_log: ScanLogORM | None) -> str:
-    uptime = utc_now() - status.started_at
+    uptime = utc_now() - ensure_aware(status.started_at)
     lines = [
         "Статус скрипта",
         "",
@@ -161,46 +162,59 @@ def format_real_balance(buy_market: MarketBalance, csgo: MarketBalance, active_i
 def format_inventory(items: list[InventoryORM], title: str = "Inventory") -> str:
     if not items:
         return f"{title}\n\nПусто."
-    lines = [title, ""]
+    lines = [title, "", f"Всего в списке: {len(items)}", ""]
     now = utc_now()
     for index, item in enumerate(items, start=1):
-        left = item.trade_lock_until - now
+        trade_lock_until = ensure_aware(item.trade_lock_until)
+        bought_at = ensure_aware(item.bought_at)
+        left = trade_lock_until - now
         left_days = max(0, left.days)
-        lock_text = "готов к продаже" if item.trade_lock_until <= now else f"осталось {left_days} дн."
+        lock_text = "готов к продаже" if trade_lock_until <= now else f"осталось {left_days} дн."
         tag = "DEMO" if item.is_demo else "REAL"
         lines.extend(
             [
                 f"{index}. #{item.id} {item.item_name}",
                 f"   {tag} | {item.status} | {lock_text}",
                 f"   buy {format_rub(item.buy_price)} | expected sell {format_rub(item.expected_sell_price)}",
+                f"   expected profit {format_rub(item.expected_profit or 0)} | ROI {format_percent(item.expected_roi or 0)}",
+                f"   bought: {_fmt_dt(bought_at)}",
                 "",
             ]
         )
     return "\n".join(lines).rstrip()
 
 
-def format_settings(settings: Settings, mode: str) -> str:
-    return "\n".join(
+def format_settings(settings: Settings, mode: str, settings_path: str | Path | None = None) -> str:
+    lines = [
+        "Настройки фильтров",
+        "",
+        f"Режим: {mode_label(mode)}",
+        f"MIN_PROFIT_ABSOLUTE={settings.min_profit_absolute}",
+        f"MIN_PROFIT_PERCENT={settings.min_profit_percent}",
+        f"MIN_ITEM_PRICE={settings.min_item_price}",
+        f"MAX_ITEM_PRICE={settings.max_item_price}",
+        f"MIN_LIQUIDITY_SCORE={settings.min_liquidity_score}",
+        f"MAX_PRICE_SPIKE_PERCENT={settings.max_price_spike_percent}",
+        f"PRICE_HISTORY_DAYS={settings.price_history_days}",
+        f"SCAN_INTERVAL_SECONDS={settings.scan_interval_seconds}",
+        f"MAX_DEALS_PER_SCAN={settings.max_deals_per_scan}",
+        f"LIS_SKINS_FEE_PERCENT={settings.lis_skins_fee_percent}",
+        f"CSGO_MARKET_FEE_PERCENT={settings.csgo_market_fee_percent}",
+        f"WITHDRAWAL_FEE_PERCENT={settings.withdrawal_fee_percent}",
+        f"LIS_SKINS_ONLY_UNLOCKED={settings.lis_skins_only_unlocked}",
+        f"LIS_SKINS_MIN_COUNT={settings.lis_skins_min_count}",
+    ]
+    if settings_path is not None:
+        lines.extend(["", f"Файл настроек: {settings_path}"])
+    lines.extend(
         [
-            "Настройки фильтров",
             "",
-            f"Режим: {mode_label(mode)}",
-            f"BUY_MARKET_SOURCE={settings.buy_market_source}",
-            f"MIN_PROFIT_ABSOLUTE={settings.min_profit_absolute}",
-            f"MIN_PROFIT_PERCENT={settings.min_profit_percent}",
-            f"MIN_ITEM_PRICE={settings.min_item_price}",
-            f"MAX_ITEM_PRICE={settings.max_item_price}",
-            f"MIN_LIQUIDITY_SCORE={settings.min_liquidity_score}",
-            f"MAX_PRICE_SPIKE_PERCENT={settings.max_price_spike_percent}",
-            f"MAX_DEALS_PER_SCAN={settings.max_deals_per_scan}",
-            f"SCAN_INTERVAL_SECONDS={settings.scan_interval_seconds}",
-            f"LIS_SKINS_FEE_PERCENT={settings.lis_skins_fee_percent}",
-            f"CSGO_MARKET_FEE_PERCENT={settings.csgo_market_fee_percent}",
-            f"WITHDRAWAL_FEE_PERCENT={settings.withdrawal_fee_percent}",
-            f"RUB_USD_RATE_SOURCE={settings.rub_usd_rate_source}",
-            f"ALLOW_REAL_TRADING={settings.allow_real_trading}",
+            "Изменить настройку: /set MIN_PROFIT_PERCENT 2",
+            "Список изменяемых настроек: /settings_help",
+            "Пересканировать по новым фильтрам: /rescan",
         ]
     )
+    return "\n".join(lines)
 
 
 def format_help() -> str:
@@ -216,6 +230,9 @@ def format_help() -> str:
             "/locked - предметы в trade lock",
             "/ready - готовые к продаже",
             "/settings - текущие фильтры",
+            "/settings_help - список настроек, которые можно менять из бота",
+            "/set MIN_PROFIT_PERCENT 2 - изменить настройку",
+            "/rescan - пересканировать рынок по текущим настройкам",
             "/pause - остановить сканирование",
             "/resume - возобновить сканирование",
             "/mode - текущий режим DEMO/REAL",
@@ -260,4 +277,4 @@ def _maybe_money(value: object) -> str:
 def _fmt_dt(value: datetime | None) -> str:
     if value is None:
         return "еще не было"
-    return value.strftime("%Y-%m-%d %H:%M:%S UTC")
+    return ensure_aware(value).strftime("%Y-%m-%d %H:%M:%S UTC")

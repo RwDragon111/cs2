@@ -28,6 +28,7 @@ from app.core.exceptions import RealTradingDisabledError
 from app.db.repositories import DealRepository, InventoryRepository, ScanLogRepository, TradingStateRepository
 from app.markets.csgo_market_client import CSGOMarketClient
 from app.services.inventory import InventoryService
+from app.services.runtime_settings import RuntimeSettingsStore, format_editable_settings_help
 from app.services.scanner import ArbitrageScanner, BuyMarketClient
 
 
@@ -61,6 +62,9 @@ def build_bot_commands():
         ("locked", "Trade lock"),
         ("ready", "Готово к продаже"),
         ("settings", "Фильтры"),
+        ("settings_help", "Изменяемые настройки"),
+        ("set", "Изменить настройку"),
+        ("rescan", "Пересканировать рынок"),
         ("pause", "Пауза сканера"),
         ("resume", "Запуск сканера"),
         ("mode", "Режим DEMO/REAL"),
@@ -82,6 +86,7 @@ def create_router(
     inventory: InventoryRepository,
     trading: TradingStateRepository,
     scan_logs: ScanLogRepository,
+    runtime_settings: RuntimeSettingsStore,
     inventory_service: InventoryService,
     dmarket: BuyMarketClient,
     csgo_market: CSGOMarketClient,
@@ -95,7 +100,7 @@ def create_router(
         mode = trading.get_mode()
         await message.answer(
             "CS2 Arbitrage Bot запущен.\n\n"
-            f"Маршрут анализа: купить на {settings.buy_market_name} и продать в существующий buy order на CSGO Market.\n"
+            f"Маршрут анализа: купить на {settings.buy_market_name} и продать в buy order на CSGO Market.\n"
             f"Текущий режим: {mode_label(mode)}\n\n"
             "Реальные операции отключены. Бот присылает сигналы и ссылки, покупку ты делаешь вручную.",
             reply_markup=refresh_keyboard("deals"),
@@ -120,18 +125,28 @@ def create_router(
 
     @router.message(Command("deals"))
     async def deal_list(message: Message) -> None:
-        mode = trading.get_mode()
-        rows = deals.latest(limit=5)
+        rows = deals.latest(limit=10)
         if not rows:
             await message.answer("Подходящих сделок пока нет.", reply_markup=refresh_keyboard("deals"))
             return
-        await message.answer(format_deals_list(rows, mode))
-        for row in rows:
-            await message.answer(format_deal(row, mode), reply_markup=deal_keyboard(row))
+        await message.answer(format_deals_list(rows, trading.get_mode()))
+        for row in rows[:5]:
+            await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row))
 
     @router.message(Command("best"))
     async def best(message: Message) -> None:
         await message.answer(format_deals_list(deals.best(limit=10), trading.get_mode(), title="Топ сделок"))
+
+    @router.message(Command("rescan"))
+    async def rescan(message: Message) -> None:
+        await message.answer("Запускаю перескан по текущим настройкам.")
+        rows = await scanner.scan_once(notify=False, include_existing=True)
+        if not rows:
+            await message.answer("Подходящих сделок по текущим фильтрам не найдено.", reply_markup=refresh_keyboard("deals"))
+            return
+        await message.answer(format_deals_list(rows[:10], trading.get_mode(), title="Результат перескана"))
+        for row in rows[:5]:
+            await message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row))
 
     @router.message(Command("inventory"))
     async def inventory_command(message: Message) -> None:
@@ -154,7 +169,28 @@ def create_router(
 
     @router.message(Command("settings"))
     async def settings_command(message: Message) -> None:
-        await message.answer(format_settings(settings, trading.get_mode()))
+        await message.answer(format_settings(settings, trading.get_mode(), runtime_settings.path))
+
+    @router.message(Command("settings_help"))
+    async def settings_help(message: Message) -> None:
+        await message.answer(format_editable_settings_help(runtime_settings.path))
+
+    @router.message(Command("set"))
+    async def set_setting(message: Message) -> None:
+        parts = (message.text or "").split(maxsplit=2)
+        if len(parts) != 3:
+            await message.answer("Использование: /set MIN_PROFIT_PERCENT 2\nСписок настроек: /settings_help")
+            return
+        try:
+            spec, value = runtime_settings.set(parts[1], parts[2])
+        except ValueError as exc:
+            await message.answer(f"Не удалось изменить настройку: {exc}\nСписок настроек: /settings_help")
+            return
+        await message.answer(
+            f"Настройка сохранена: {spec.key}={value}\n"
+            f"Файл: {runtime_settings.path}\n\n"
+            "Она уже применяется в текущем процессе. Нажми /rescan, чтобы пересканировать рынок по новым фильтрам."
+        )
 
     @router.message(Command("pause"))
     async def pause(message: Message) -> None:
@@ -212,10 +248,12 @@ def create_router(
     @router.callback_query(F.data == "refresh_deals")
     async def refresh_deals(callback: CallbackQuery) -> None:
         await callback.answer("Обновляю")
-        rows = await scanner.scan_once(notify=False)
+        rows = await scanner.scan_once(notify=False, include_existing=True)
         if callback.message is not None:
             if not rows:
-                await callback.message.answer("Новых сделок не найдено.")
+                await callback.message.answer("Подходящих сделок по текущим фильтрам не найдено.", reply_markup=refresh_keyboard("deals"))
+                return
+            await callback.message.answer(format_deals_list(rows[:10], trading.get_mode(), title="Результат перескана"))
             for row in rows[:5]:
                 await callback.message.answer(format_deal(row, trading.get_mode()), reply_markup=deal_keyboard(row))
 
@@ -237,7 +275,8 @@ def create_router(
     async def deal_hide(callback: CallbackQuery) -> None:
         deal = deals.mark_status(_callback_id(callback.data), "hidden")
         await callback.answer("Скрыто" if deal else "Не найдено")
-        await _delete_callback_message(callback)
+        if deal:
+            await _delete_callback_message(callback)
 
     @router.callback_query(F.data.startswith("deal_watch:"))
     async def deal_watch(callback: CallbackQuery) -> None:
@@ -290,10 +329,11 @@ def create_router(
     @router.callback_query(F.data == "real_cancel")
     async def real_cancel(callback: CallbackQuery) -> None:
         await callback.answer("Отменено")
+        await _delete_callback_message(callback)
 
     async def _buy_deal(callback: CallbackQuery, deal_id: int, confirmed_real: bool) -> None:
         try:
-            item = await inventory_service.mark_deal_bought(deal_id, confirmed_real=confirmed_real)
+            await inventory_service.mark_deal_bought(deal_id, confirmed_real=confirmed_real)
         except RealTradingDisabledError as exc:
             await callback.answer("REAL операция не выполнена", show_alert=True)
             if callback.message is not None:
@@ -304,17 +344,12 @@ def create_router(
             if callback.message is not None:
                 await callback.message.answer(f"Не удалось отметить покупку: {exc}")
             return
-        await callback.answer("Готово")
+        await callback.answer("Покупка отмечена. Смотри /inventory")
         await _delete_callback_message(callback)
-        if callback.message is not None:
-            await callback.message.answer(
-                f"Покупка отмечена.\n\n{format_inventory([item], 'Inventory')}",
-                reply_markup=inventory_keyboard(item.id),
-            )
 
     async def _sell_inventory(callback: CallbackQuery, inventory_id: int, confirmed_real: bool) -> None:
         try:
-            item = await inventory_service.mark_sold(inventory_id, confirmed_real=confirmed_real)
+            await inventory_service.mark_sold(inventory_id, confirmed_real=confirmed_real)
         except RealTradingDisabledError as exc:
             await callback.answer("REAL операция не выполнена", show_alert=True)
             if callback.message is not None:
@@ -326,8 +361,7 @@ def create_router(
                 await callback.message.answer(f"Не удалось отметить продажу: {exc}")
             return
         await callback.answer("Продано")
-        if callback.message is not None:
-            await callback.message.answer(format_inventory([item], "Продано"))
+        await _delete_callback_message(callback)
 
     return router
 

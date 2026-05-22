@@ -102,11 +102,11 @@ class ArbitrageScanner:
     def resume(self) -> None:
         self.status.is_paused = False
 
-    async def scan_once(self, notify: bool = True) -> list[DealORM]:
+    async def scan_once(self, notify: bool = True, include_existing: bool = False) -> list[DealORM]:
         async with self._scan_lock:
-            return await self._scan_once_locked(notify=notify)
+            return await self._scan_once_locked(notify=notify, include_existing=include_existing)
 
-    async def _scan_once_locked(self, notify: bool = True) -> list[DealORM]:
+    async def _scan_once_locked(self, notify: bool = True, include_existing: bool = False) -> list[DealORM]:
         scan_log = self.scan_logs.start()
         self.status.last_scan_started_at = scan_log.started_at
         found: list[DealORM] = []
@@ -155,7 +155,7 @@ class ArbitrageScanner:
 
             for candidate in candidates:
                 row, created = self.deals.upsert(candidate.to_orm_payload())
-                if created:
+                if created or include_existing:
                     found.append(row)
             self.status.last_error = None
         except Exception as exc:
@@ -172,7 +172,7 @@ class ArbitrageScanner:
             self.status.total_found_deals_count += len(found)
 
         for deal in found:
-            if notify and self.on_new_deal is not None:
+            if notify and not include_existing and self.on_new_deal is not None:
                 await self.on_new_deal(deal)
         return found
 

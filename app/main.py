@@ -25,11 +25,14 @@ from app.markets.csgo_market_client import CSGOMarketClient
 from app.markets.dmarket_client import DMarketClient
 from app.markets.lis_skins_client import LisSkinsClient
 from app.services.inventory import InventoryService
+from app.services.runtime_settings import RuntimeSettingsStore
 from app.services.scanner import ArbitrageScanner
 
 
 async def async_main() -> None:
     settings = get_settings()
+    runtime_settings = RuntimeSettingsStore(settings)
+    runtime_settings.load()
     setup_logging(settings)
     logger = logging.getLogger("app.main")
 
@@ -93,6 +96,7 @@ async def async_main() -> None:
                 inventory=inventory,
                 trading=trading,
                 scan_logs=scan_logs,
+                runtime_settings=runtime_settings,
                 inventory_service=inventory_service,
                 dmarket=buy_market,
                 csgo_market=csgo_market,
